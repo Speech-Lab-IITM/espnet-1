@@ -101,6 +101,7 @@ class HubertPretrainModel(AbsESPnetModel):
         text: torch.Tensor,
         text_lengths: torch.Tensor,
         dataset_type: torch.Tensor, # added for multidata
+        dataset_type_lengths: torch.Tensor, # added for multidata
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], torch.Tensor]:
         """Frontend + Encoder + Calc loss
 
@@ -198,14 +199,29 @@ class HubertPretrainModel(AbsESPnetModel):
         encoder_out = self.encoder(feats, feats_lengths, y_pad, y_pad_length, features_only=True)
         x = encoder_out['x']
         padding_mask = encoder_out['padding_mask']
+        features = encoder_out['features']
 
+        # Added the following logic for multidata
         encoder_out = []
         for enc in self.data_specific_encoders:
-            encoder_out.append(enc(x))
-        
-        return encoder_out
+            encoder_out.append(enc(x)[0])
 
-    def compute_logits(self, x, ):
+        y_pad = y_pad[:, : min(y_pad_length)]
+        target_list = [y_pad]
+        forwarded_features = self.encoder.encoder.forward_features(feats)
+        features_pen = forwarded_features.float().pow(2).mean()
+        _ , target_list = self.encoder.encoder.forward_targets(forwarded_features, target_list)
+        _ , mask_indices = self.encoder.encoder.apply_mask(features, padding_mask, target_list)
+        result = []
+        c = 0
+        for x in encoder_out:
+            c+=1
+            out = self.compute_logits(x, padding_mask, mask_indices, target_list)
+            out['features_pen'] = features_pen
+            result.append(out)
+        return result
+
+    def compute_logits(self, x, padding_mask, mask_indices, target_list):
         def compute_pred(proj_x, target, label_embs):
             # compute logits for the i-th label set
             y = torch.index_select(label_embs, 0, target.long())
@@ -227,6 +243,7 @@ class HubertPretrainModel(AbsESPnetModel):
                 proj_x_m_list = proj_x_m.chunk(len(target_list), dim=-1)
             else:
                 proj_x_m_list = [proj_x_m for _ in range(len(target_list))]
+            
             logit_m_list = [
                 compute_pred(proj_x_m, t[masked_indices], label_embs_list[i])
                 for i, (proj_x_m, t) in enumerate(zip(proj_x_m_list, target_list))
@@ -256,10 +273,10 @@ class HubertPretrainModel(AbsESPnetModel):
         }
 
         if hasattr(self.encoder, "encoder"):
-            logp_m_list = self.encoder.encoder.get_logits(encoder_out, True)
+            logp_m_list = self.encoder.encoder.get_logits(result, True)
             assert self.pred_masked_weight == 0 or len(logp_m_list) > 0
 
-            logp_u_list = self.encoder.encoder.get_logits(encoder_out, False)
+            logp_u_list = self.encoder.encoder.get_logits(result, False)
             assert self.pred_nomask_weight == 0 or len(logp_u_list) > 0
         return result
 
@@ -300,7 +317,7 @@ class HubertPretrainModel(AbsESPnetModel):
     def _calc_hubert_loss(
         self,
         encoder_out: Dict[str, torch.Tensor],
-        dataset_type: Tensor,
+        dataset_type: torch.Tensor,
         key: int
     ):
         # changed for multidata
@@ -311,8 +328,8 @@ class HubertPretrainModel(AbsESPnetModel):
 
         # mask logic added for multidata
         data_mask = dataset_type == key
-        loss_att = torch.mean(torch.apply_mask(loss_att, data_mask))
-        indices = [i for i,val in enumerate(data_mask) if val]
+        loss_att = torch.mean(torch.masked_select(loss_att, data_mask))
+        indices = torch.tensor([i for i,val in enumerate(data_mask) if val]).cuda()
 
         corr_masked, count_masked = 0, 0
         corr_unmask, count_unmask = 0, 0
@@ -323,7 +340,7 @@ class HubertPretrainModel(AbsESPnetModel):
                 corr_masked += corr_m
                 count_masked += count_m
             for i, logp_u in enumerate(logp_u_list):
-                logp_u = torch.index_select(logp_m, 0, indices)
+                logp_u = torch.index_select(logp_u, 0, indices)
                 corr_u, count_u = self.compute_correct(logp_u)
                 corr_unmask += corr_u
                 count_unmask += count_u

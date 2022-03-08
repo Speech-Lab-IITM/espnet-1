@@ -48,6 +48,7 @@ from espnet2.utils.types import int_or_none
 from espnet2.utils.types import str2bool
 from espnet2.utils.types import str_or_none
 from fairseq.models.wav2vec.wav2vec2 import TransformerEncoder
+from fairseq.models.hubert.hubert import HubertConfig
 
 frontend_choices = ClassChoices(
     name="frontend",
@@ -318,7 +319,7 @@ class MultiDataHubertTask(AbsTask):
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
         if not inference:
-            retval = ("speech", "text", "dataset_type") # changed for multidata
+            retval = ("speech", "text",)
         else:
             # Recognition mode
             retval = ("speech",)
@@ -328,7 +329,7 @@ class MultiDataHubertTask(AbsTask):
     def optional_data_names(
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
-        retval = ()
+        retval = ("dataset_type", ) # changed for multidata
         assert check_return_type(retval)
         return retval
 
@@ -405,17 +406,16 @@ class MultiDataHubertTask(AbsTask):
             "dropout": args.encoder_conf['dropout_rate'],
             "attention_dropout": args.encoder_conf['attention_dropout_rate'],
             "label_rate": args.encoder_conf['label_rate'],
-            "checkpoint_activations": args.encoder_conf['checkpoint_activations'],
         }
         cfg_overides = {**cfg_overides, **args.encoder_conf}
         cfg = HubertConfig()
         for key, value in cfg_overides.items():
-            if hasattr(self.cfg, key):
-                setattr(self.cfg, key, value)
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
 
         data_specific_encoders = []
-        data_specific_encoders.append(TransformerEncoder(cfg))
-        data_specific_encoders.append(TransformerEncoder(cfg))
+        data_specific_encoders.append(TransformerEncoder(cfg).cuda())
+        data_specific_encoders.append(TransformerEncoder(cfg).cuda())
 
         # 8. Build model
         model = HubertPretrainModel(
