@@ -36,8 +36,8 @@ HUI_ACG=downloads
 HUB4_SPANISH=
 LABOROTV=
 TEDXJP=
-LIBRISPEECH=
-LIBRILIGHT_LIMITED=
+LIBRISPEECH=/nlsasfs/home/nltm-pilot/arunk/Database/LibriSpeech
+LIBRILIGHT_LIMITED=/nlsasfs/home/nltm-pilot/arunk/Database/Librilight
 FSC=
 SLURP=
 VOXCELEB=
@@ -122,6 +122,7 @@ WENETSPEECH=
 SPEECHCOMMANDS=downloads
 TOTONAC=downloads
 PRIMEWORDS_CHINESE=downloads
+SEAME=
 
 # For only CMU environment
 if [[ "$(hostname)" == tir.lti.cs.cmu.edu ]]; then

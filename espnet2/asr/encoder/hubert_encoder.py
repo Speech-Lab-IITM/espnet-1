@@ -340,6 +340,7 @@ class FairseqHubertPretrainEncoder(AbsEncoder):
         ys_pad: torch.Tensor,
         ys_pad_length: torch.Tensor,
         prev_states: torch.Tensor = None,
+        features_only: bool = False,
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         """Forward Hubert Pretrain Encoder.
 
@@ -358,9 +359,18 @@ class FairseqHubertPretrainEncoder(AbsEncoder):
             padding_mask=masks,
             mask=True,
             target_list=[ys_pad],
-            features_only=False,
+            features_only=features_only,
         )
-        return enc_outputs
+
+        if features_only:
+            xs_pad = enc_outputs["x"]  # (B,T,C),
+            masks = enc_outputs["padding_mask"]  # (B, T)
+            # save gpu memory
+            del enc_outputs
+            olens = (~masks).sum(dim=1)
+            return xs_pad, olens, None
+        else:
+            return enc_outputs
 
     def cast_mask_emb(self):
         if self.use_amp and self.encoder.mask_emb.dtype != torch.cuda.HalfTensor:

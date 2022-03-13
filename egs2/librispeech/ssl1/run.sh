@@ -5,8 +5,8 @@ set -e
 set -u
 set -o pipefail
 
-pretrain_start_iter=0
-pretrain_stop_iter=2
+pretrain_start_iter=1
+pretrain_stop_iter=1
 
 n_clusters_iter0=100
 n_clusters_iter1=500

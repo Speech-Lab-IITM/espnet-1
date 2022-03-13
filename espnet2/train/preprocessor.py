@@ -143,7 +143,7 @@ class CommonPreprocessor(AbsPreprocessor):
         noise_db_range: str = "3_10",
         speech_volume_normalize: float = None,
         speech_name: str = "speech",
-        text_name: str = "text",
+        text_name: Union[str, Iterable[str]] = "text",
     ):
         super().__init__(train)
         self.train = train
@@ -299,13 +299,14 @@ class CommonPreprocessor(AbsPreprocessor):
                 speech = data[self.speech_name]
                 ma = np.max(np.abs(speech))
                 data[self.speech_name] = speech * self.speech_volume_normalize / ma
-
-        if self.text_name in data and self.tokenizer is not None:
-            text = data[self.text_name]
-            text = self.text_cleaner(text)
-            tokens = self.tokenizer.text2tokens(text)
-            text_ints = self.token_id_converter.tokens2ids(tokens)
-            data[self.text_name] = np.array(text_ints, dtype=np.int64)
+        
+        for text_n in self.text_name:
+            if text_n in data and self.tokenizer is not None:
+                text = data[text_n]
+                text = self.text_cleaner(text)
+                tokens = self.tokenizer.text2tokens(text)
+                text_ints = self.token_id_converter.tokens2ids(tokens)
+                data[text_n] = np.array(text_ints, dtype=np.int64)
         assert check_return_type(data)
         return data
 

@@ -23,8 +23,8 @@ min() {
 SECONDS=0
 
 # General configuration
-stage=1              # Processes starts from the specified stage.
-stop_stage=10000     # Processes is stopped at the specified stage.
+stage=11              # Processes starts from the specified stage.
+stop_stage=13     # Processes is stopped at the specified stage.
 skip_data_prep=false # Skip data preparation stages.
 skip_train=false     # Skip training stages.
 skip_eval=false      # Skip decoding and evaluation stages.
@@ -33,8 +33,8 @@ skip_upload_hf=true  # Skip uploading to hugging face stages.
 ngpu=1               # The number of gpus ("0" uses cpu, otherwise use gpu).
 num_nodes=1          # The number of nodes.
 nj=32                # The number of parallel jobs.
-inference_nj=32      # The number of parallel jobs in decoding.
-gpu_inference=false  # Whether to perform gpu decoding.
+inference_nj=8      # The number of parallel jobs in decoding.
+gpu_inference=true  # Whether to perform gpu decoding.
 dumpdir=dump         # Directory to dump features.
 expdir=exp           # Directory to save experiments.
 python=python3       # Specify python to execute espnet commands.
@@ -69,7 +69,7 @@ ngram_exp=
 ngram_num=3
 
 # Language model related
-use_lm=true       # Use language model for ASR decoding.
+use_lm=false       # Use language model for ASR decoding.
 lm_tag=           # Suffix to the result dir for language model training.
 lm_exp=           # Specify the directory path for LM experiment.
                   # If this option is specified, lm_tag is ignored.
@@ -91,7 +91,7 @@ asr_config=    # Config for asr model training.
 asr_args=      # Arguments for asr model training, e.g., "--max_epoch 10".
                # Note that it will overwrite args in asr config.
 pretrained_model=              # Pretrained model to load
-ignore_init_mismatch=false      # Ignore initial mismatch
+ignore_init_mismatch=true      # Ignore initial mismatch
 feats_normalize=global_mvn # Normalizaton layer type.
 num_splits_asr=1           # Number of splitting for lm corpus.
 
@@ -117,7 +117,7 @@ inference_args=   # Arguments for decoding, e.g., "--lm_weight 0.1".
                   # Note that it will overwrite args in inference config.
 inference_lm=valid.loss.ave.pth       # Language model path for decoding.
 inference_ngram=${ngram_num}gram.bin
-inference_asr_model=valid.acc.ave.pth # ASR model path for decoding.
+inference_asr_model=valid.loss.best.pth # ASR model path for decoding.
                                       # e.g.
                                       # inference_asr_model=train.loss.best.pth
                                       # inference_asr_model=3epoch.pth

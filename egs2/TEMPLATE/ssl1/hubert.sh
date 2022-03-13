@@ -30,8 +30,8 @@ min() {
 SECONDS=0
 
 # General configuration
-stage=1              # Processes starts from the specified stage.
-stop_stage=10000     # Processes is stopped at the specified stage.
+stage=5              # Processes starts from the specified stage.
+stop_stage=5     # Processes is stopped at the specified stage.
 pretrain_start_iter= # Pretrain starts from the specified iteration (0 mean MFCC iteraion)
 pretrain_stop_iter=  # Pretrain is stopped from the specified iteration (0 mean MFCC iteraion)
 skip_data_prep=false # Skip data preparation stages.
@@ -79,7 +79,7 @@ num_splits_asr=1           # Number of splitting for lm corpus.
 # Pretrain related
 n_clusters=                # Number of k-means clusters of pretraining stage
 features_km=               # Feature for k-means clustering of pretraining stage
-portion_km=                # Portion of training set used for k-means
+portion_km=0.1                # Portion of training set used for k-means
 pretrain_configs=          # Configration files of pretraining stage
 
 download_model= # Download a model from Model Zoo and use it for decoding.
