@@ -1,0 +1,49 @@
+batch_type: numel
+batch_bins: 15000000
+accum_grad: 1
+max_epoch: 20
+patience: none
+# The initialization method for model parameters
+init: xavier_uniform
+best_model_criterion:
+-   - valid
+    - loss
+    - min
+keep_nbest_models: 10
+
+input_size: 768
+encoder: hubert
+encoder_conf:
+    hubert_url: https://dl.fbaipublicfiles.com/hubert/hubert_base_ls960.pt
+    hubert_dir_path: /nlsasfs/home/nltm-pilot/arunk/pretrained_models
+    output_size: 768
+
+decoder: transformer
+decoder_conf:
+    attention_heads: 8
+    linear_units: 2048
+    num_blocks: 6
+    dropout_rate: 0.1
+    positional_dropout_rate: 0.1
+    self_attention_dropout_rate: 0.1
+    src_attention_dropout_rate: 0.1
+
+model_conf:
+    hubert_weight: 1.0
+    lsm_weight: 0.1
+    length_normalized_loss: false
+    pred_masked_weight: 1.0
+    pred_nomask_weight: 0.0
+    loss_weights: 10.0
+
+optim: adam
+optim_conf:
+    lr: 0.0001
+scheduler: warmuplr
+scheduler_conf:
+    warmup_steps: 25000
+
+unused_parameters: true
+frontend: null
+normalize: null
+specaug: null
