@@ -20,8 +20,8 @@ from typeguard import check_argument_types
 from typeguard import check_return_type
 
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
-from espnet2.asr.encoder.hubert_encoder import (
-    FairseqHubertPretrainEncoder,  # noqa: H301
+from espnet2.asr.encoder.hubert_encoder_ssl_finetune import (
+    FairseqHubertEncoder,  #### Change
 )
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
 from espnet2.asr.frontend.default import DefaultFrontend
@@ -30,7 +30,7 @@ from espnet2.asr.preencoder.abs_preencoder import AbsPreEncoder
 from espnet2.asr.preencoder.sinc import LightweightSincConvs
 from espnet2.asr.specaug.abs_specaug import AbsSpecAug
 from espnet2.asr.specaug.specaug import SpecAug
-from espnet2.multidata_hubert.espnet_model import HubertPretrainModel
+from espnet2.hubert.espnet_model import HubertPretrainModel
 from espnet2.layers.abs_normalize import AbsNormalize
 from espnet2.layers.global_mvn import GlobalMVN
 from espnet2.layers.utterance_mvn import UtteranceMVN
@@ -47,8 +47,6 @@ from espnet2.utils.types import float_or_none
 from espnet2.utils.types import int_or_none
 from espnet2.utils.types import str2bool
 from espnet2.utils.types import str_or_none
-from fairseq.models.wav2vec.wav2vec2 import TransformerSentenceEncoderLayer
-from fairseq.models.hubert.hubert import HubertConfig
 
 frontend_choices = ClassChoices(
     name="frontend",
@@ -82,17 +80,18 @@ preencoder_choices = ClassChoices(
     default=None,
     optional=True,
 )
+#### Change FairseqHubertPretrainEncoder ---> FairseqHubertEncoder, hubert_pretrain ---> hubert
 encoder_choices = ClassChoices(
     "encoder",
     classes=dict(
-        hubert_pretrain=FairseqHubertPretrainEncoder,
+        hubert=FairseqHubertEncoder,
     ),
     type_check=AbsEncoder,
-    default="hubert_pretrain",
+    default="hubert",
 )
 
 
-class MultiDataHubertTask(AbsTask):
+class HubertTask(AbsTask):
     # If you need more than one optimizers, change this value
     num_optimizers: int = 1
 
@@ -127,13 +126,6 @@ class MultiDataHubertTask(AbsTask):
             type=str_or_none,
             default=None,
             help="A text mapping int-id to token",
-        )
-        # Added for multidata configuration
-        group.add_argument(
-            "--data_specific_blocks",
-            type=int_or_none,
-            default=3,
-            help="The number of data specific encoder blocks",
         )
         group.add_argument(
             "--init",
@@ -319,7 +311,7 @@ class MultiDataHubertTask(AbsTask):
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
         if not inference:
-            retval = ("speech", "text",)
+            retval = ("speech", "text")
         else:
             # Recognition mode
             retval = ("speech",)
@@ -329,7 +321,7 @@ class MultiDataHubertTask(AbsTask):
     def optional_data_names(
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
-        retval = ("dataset_type", ) # changed for multidata
+        retval = ()
         assert check_return_type(retval)
         return retval
 
@@ -384,71 +376,13 @@ class MultiDataHubertTask(AbsTask):
         else:
             preencoder = None
 
-        # 4. Encoder - Common
-        # For multidata
-        args.encoder_conf['num_blocks'] = (args.encoder_conf['num_blocks'] if args.encoder_conf['num_blocks'] is not None else 12) - args.data_specific_blocks
+        # 4. Encoder
         encoder_class = encoder_choices.get_class(args.encoder)
+        #### Changed as per FairSeqHubertModel arguments.
         encoder = encoder_class(
             input_size=input_size,
-            use_amp=args.use_amp,
-            hubert_dict=args.hubert_dict,
             **args.encoder_conf,
         )
-
-        # For multidata
-        args.encoder_conf['num_blocks'] = args.data_specific_blocks
-        """
-        cfg_overides = {
-            "encoder_embed_dim": args.encoder_conf['output_size'],
-            "encoder_ffn_embed_dim": args.encoder_conf['linear_units'],
-            "encoder_attention_heads": args.encoder_conf['attention_heads'],
-            "encoder_layers": args.encoder_conf['num_blocks'],
-            "final_dim": args.encoder_conf['output_size'],
-            "dropout": args.encoder_conf['dropout_rate'],
-            "attention_dropout": args.encoder_conf['attention_dropout_rate'],
-            "label_rate": args.encoder_conf['label_rate'],
-        }
-        """
-        config= {
-                "embedding_dim": args.encoder_conf['output_size'],
-                "ffn_embedding_dim": args.encoder_conf['linear_units'],
-                "num_attention_heads": args.encoder_conf['attention_heads'],
-                "dropout": args.encoder_conf['dropout_rate'],
-                "attention_dropout": args.encoder_conf['attention_dropout_rate'],
-                "activation_dropout": 0.1,
-                "activation_fn": "relu",
-                "layer_norm_first": False,
-        }
-        """        
-        cfg_overides = {**cfg_overides, **args.encoder_conf}
-        cfg = HubertConfig()
-        for key, value in cfg_overides.items():
-            if hasattr(cfg, key):
-                setattr(cfg, key, value)
-        """
-        data_specific_encoders = []
-        """
-        data_specific_encoders.append(TransformerEncoder(cfg))
-        data_specific_encoders.append(TransformerEncoder(cfg))
-        data_specific_encoders = torch.nn.ModuleList(data_specific_encoders)
-        """
-        Transformer1=[]
-        Transformer2=[]
-        for i in range(args.data_specific_blocks):
-            """
-            Transformer.append(TransformerSentenceEncoderLayer("embedding_dim": args.encoder_conf['output_size'],"ffn_embedding_dim": args.encoder_conf['linear_units'],"num_attention_heads": args.encoder_conf['attention_heads'],"dropout": args.encoder_conf['dropout_rate'],"attention_dropout": args.encoder_conf['attention_dropout_rate'],"activation_dropout": 0.1,"activation_fn": "relu","layer_norm_first": False))
-            """
-            Transformer1.append(TransformerSentenceEncoderLayer(args.encoder_conf['output_size'],args.encoder_conf['linear_units'],args.encoder_conf['attention_heads'],args.encoder_conf['dropout_rate'],args.encoder_conf['attention_dropout_rate'],0.1,"relu",False))
-            Transformer2.append(TransformerSentenceEncoderLayer(args.encoder_conf['output_size'],args.encoder_conf['linear_units'],args.encoder_conf['attention_heads'],args.encoder_conf['dropout_rate'],args.encoder_conf['attention_dropout_rate'],0.1,"relu",False))
-        from fairseq.modules import LayerNorm
-
-        Transformer1.append(LayerNorm(args.encoder_conf['output_size']))
-        Transformer2.append(LayerNorm(args.encoder_conf['output_size']))
-        Transformer1=torch.nn.ModuleList(Transformer1)
-        Transformer2=torch.nn.ModuleList(Transformer2)
-        data_specific_encoders.append(Transformer1)
-        data_specific_encoders.append(Transformer2)
-        data_specific_encoders = torch.nn.ModuleList(data_specific_encoders)
 
         # 8. Build model
         model = HubertPretrainModel(
@@ -458,7 +392,6 @@ class MultiDataHubertTask(AbsTask):
             normalize=normalize,
             preencoder=preencoder,
             encoder=encoder,
-            data_specific_encoders=data_specific_encoders,
             token_list=token_list,
             **args.model_conf,
         )

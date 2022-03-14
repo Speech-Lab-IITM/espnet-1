@@ -50,7 +50,7 @@ class HubertPretrainModel(AbsESPnetModel):
         normalize: Optional[AbsNormalize],
         preencoder: Optional[AbsPreEncoder],
         encoder: AbsEncoder,
-        data_specific_encoders: List[TransformerEncoder],
+        data_specific_encoders: torch.nn.ModuleList,
         ignore_id: int = -1,
         lsm_weight: float = 0.0,
         length_normalized_loss: bool = False,
@@ -202,9 +202,21 @@ class HubertPretrainModel(AbsESPnetModel):
         features = encoder_out['features']
 
         # Added the following logic for multidata
+        x = x.transpose(0, 1)
         encoder_out = []
         for enc in self.data_specific_encoders:
-            encoder_out.append(enc(x)[0])
+            out = x
+            for layer in range(len(enc)-1):
+                out = enc[layer](x=out, self_attn_padding_mask=padding_mask)[0]
+            out = enc[-1](out)
+            encoder_out.append(out.transpose(0, 1))
+            """
+            for layer in enc:
+                #print(enc[layer])
+                out = layer(x=out, self_attn_padding_mask=padding_mask)[0]
+            encoder_out.append(out.transpose(0, 1))
+            """
+        x = x.transpose(0, 1)
 
         y_pad = y_pad[:, : min(y_pad_length)]
         target_list = [y_pad]
