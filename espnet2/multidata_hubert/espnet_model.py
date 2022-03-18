@@ -137,9 +137,9 @@ class HubertPretrainModel(AbsESPnetModel):
             encoder_out[1], dataset_type, 1
         )
 
-        loss = (torch.sum(data_mask_1) * loss_1 + torch.sum(data_mask_2) * loss_2) / batch_size
-        acc_mask = (torch.sum(data_mask_1) * acc_mask_1 + torch.sum(data_mask_2) * acc_mask_2) / batch_size
-        acc_unmask = (torch.sum(data_mask_1) * acc_unmask_1 + torch.sum(data_mask_2) * acc_unmask_2) / batch_size
+        loss = (torch.sum(data_mask_1) * loss_1 + torch.sum(data_mask_2) * loss_2)/(torch.sum(data_mask_1)+torch.sum(data_mask_2))
+        acc_mask = (torch.sum(data_mask_1) * acc_mask_1 + torch.sum(data_mask_2) * acc_mask_2)/(torch.sum(data_mask_1)+torch.sum(data_mask_2))
+        acc_unmask = (torch.sum(data_mask_1) * acc_unmask_1 + torch.sum(data_mask_2) * acc_unmask_2)/(torch.sum(data_mask_1)+torch.sum(data_mask_2))
 
         stats = dict(
             loss=loss.detach(),
@@ -318,6 +318,8 @@ class HubertPretrainModel(AbsESPnetModel):
         if logits.numel() == 0:
             return 0, 0
         else:
+            #print(logits.shape())
+            #print(logits.numel())
             assert logits.dim() > 1, logits.shape
             max = logits.argmax(-1) == 0
             min = logits.argmin(-1) == 0
