@@ -51,6 +51,8 @@ class HubertPretrainModel(AbsESPnetModel):
         preencoder: Optional[AbsPreEncoder],
         encoder: AbsEncoder,
         data_specific_encoders: torch.nn.ModuleList,
+        label_embs_concat_0: torch.nn.Parameter,
+        label_embs_concat_1: torch.nn.Parameter,
         ignore_id: int = -1,
         lsm_weight: float = 0.0,
         length_normalized_loss: bool = False,
@@ -78,6 +80,8 @@ class HubertPretrainModel(AbsESPnetModel):
         self.preencoder = preencoder
         self.encoder = encoder
         self.data_specific_encoders = data_specific_encoders
+        self.label_embs_concat_0 = label_embs_concat_0
+        self.label_embs_concat_1 = label_embs_concat_1
         self.criterion_att = HubertPretrainLoss(
             pred_masked_weight,
             pred_nomask_weight,
@@ -206,9 +210,10 @@ class HubertPretrainModel(AbsESPnetModel):
         encoder_out = []
         for enc in self.data_specific_encoders:
             out = x
-            for layer in range(len(enc)-1):
+            for layer in range(len(enc)-2):
                 out = enc[layer](x=out, self_attn_padding_mask=padding_mask)[0]
-            out = enc[-1](out)
+            out = enc[-2](out)
+            #print("out",out.shape)
             encoder_out.append(out.transpose(0, 1))
             """
             for layer in enc:
@@ -226,14 +231,14 @@ class HubertPretrainModel(AbsESPnetModel):
         _ , mask_indices = self.encoder.encoder.apply_mask(features, padding_mask, target_list)
         result = []
         c = 0
-        for x in encoder_out:
+        for i, x in enumerate(encoder_out):
             c+=1
-            out = self.compute_logits(x, padding_mask, mask_indices, target_list)
+            out = self.compute_logits(x, padding_mask, mask_indices, target_list, i)
             out['features_pen'] = features_pen
             result.append(out)
         return result
 
-    def compute_logits(self, x, padding_mask, mask_indices, target_list):
+    def compute_logits(self, x, padding_mask, mask_indices, target_list, i):
         def compute_pred(proj_x, target, label_embs):
             # compute logits for the i-th label set
             y = torch.index_select(label_embs, 0, target.long())
@@ -246,11 +251,14 @@ class HubertPretrainModel(AbsESPnetModel):
             # negs: (Neg, S, D)
             return self.encoder.encoder.compute_nce(proj_x, y, negs)
 
-        label_embs_list = self.encoder.encoder.label_embs_concat.split(self.encoder.encoder.num_classes, 0)
-
+        if i==0:
+            label_embs_list = self.label_embs_concat_0.split(self.encoder.encoder.num_classes, 0)
+        else:
+            label_embs_list = self.label_embs_concat_1.split(self.encoder.encoder.num_classes, 0)
         if not self.encoder.encoder.skip_masked:
             masked_indices = torch.logical_and(~padding_mask, mask_indices)
-            proj_x_m = self.encoder.encoder.final_proj(x[masked_indices])
+            #proj_x_m = self.data_specific_encoders.0.4(x[masked_indices])
+            proj_x_m = self.data_specific_encoders[i][-1](x[masked_indices])
             if self.encoder.encoder.untie_final_proj:
                 proj_x_m_list = proj_x_m.chunk(len(target_list), dim=-1)
             else:
@@ -265,7 +273,7 @@ class HubertPretrainModel(AbsESPnetModel):
 
         if not self.encoder.encoder.skip_nomask:
             nomask_indices = torch.logical_and(~padding_mask, ~mask_indices)
-            proj_x_u = self.encoder.encoder.final_proj(x[nomask_indices])
+            proj_x_u = self.data_specific_encoders[i][-1](x[nomask_indices])
             if self.encoder.encoder.untie_final_proj:
                 proj_x_u_list = proj_x_u.chunk(len(target_list), dim=-1)
             else:

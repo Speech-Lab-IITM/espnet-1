@@ -408,18 +408,7 @@ class MultiDataHubertTask(AbsTask):
             "attention_dropout": args.encoder_conf['attention_dropout_rate'],
             "label_rate": args.encoder_conf['label_rate'],
         }
-        """
-        config= {
-                "embedding_dim": args.encoder_conf['output_size'],
-                "ffn_embedding_dim": args.encoder_conf['linear_units'],
-                "num_attention_heads": args.encoder_conf['attention_heads'],
-                "dropout": args.encoder_conf['dropout_rate'],
-                "attention_dropout": args.encoder_conf['attention_dropout_rate'],
-                "activation_dropout": 0.1,
-                "activation_fn": "relu",
-                "layer_norm_first": False,
-        }
-        """        
+              
         cfg_overides = {**cfg_overides, **args.encoder_conf}
         cfg = HubertConfig()
         for key, value in cfg_overides.items():
@@ -441,14 +430,19 @@ class MultiDataHubertTask(AbsTask):
             Transformer1.append(TransformerSentenceEncoderLayer(args.encoder_conf['output_size'],args.encoder_conf['linear_units'],args.encoder_conf['attention_heads'],args.encoder_conf['dropout_rate'],args.encoder_conf['attention_dropout_rate'],0.1,"relu",False))
             Transformer2.append(TransformerSentenceEncoderLayer(args.encoder_conf['output_size'],args.encoder_conf['linear_units'],args.encoder_conf['attention_heads'],args.encoder_conf['dropout_rate'],args.encoder_conf['attention_dropout_rate'],0.1,"relu",False))
         from fairseq.modules import LayerNorm
+        import torch.nn as nn
 
         Transformer1.append(LayerNorm(args.encoder_conf['output_size']))
+        Transformer1.append(nn.Linear(args.encoder_conf['output_size'], args.encoder_conf['final_dim']))
         Transformer2.append(LayerNorm(args.encoder_conf['output_size']))
+        Transformer2.append(nn.Linear(args.encoder_conf['output_size'], args.encoder_conf['final_dim']))
         Transformer1=torch.nn.ModuleList(Transformer1)
         Transformer2=torch.nn.ModuleList(Transformer2)
         data_specific_encoders.append(Transformer1)
         data_specific_encoders.append(Transformer2)
-        data_specific_encoders = torch.nn.ModuleList(data_specific_encoders)
+        data_specific_encoders = torch.nn.ModuleList(data_specific_encoders)        
+        label_embs_concat_0 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['output_size']))
+        label_embs_concat_1 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['output_size']))
 
         # 8. Build model
         model = HubertPretrainModel(
@@ -459,6 +453,8 @@ class MultiDataHubertTask(AbsTask):
             preencoder=preencoder,
             encoder=encoder,
             data_specific_encoders=data_specific_encoders,
+            label_embs_concat_0=label_embs_concat_0,
+            label_embs_concat_1=label_embs_concat_1,
             token_list=token_list,
             **args.model_conf,
         )
