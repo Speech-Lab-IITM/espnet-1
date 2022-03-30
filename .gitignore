@@ -28,6 +28,8 @@ test_spm.model
 *.swp
 *.nfs*
 *.pth # ignore checkpoints
+job.*.err
+job.*.out
 
 # recipe related
 egs*/*/*/data*
