@@ -5,27 +5,27 @@ set -e
 set -u
 set -o pipefail
 
-source path.sh
+. ./db.sh
 
-train_set="train_clean_100"
-valid_set="dev"
-test_sets="test_other"
-#test_sets="test_clean test_other dev_clean dev_other"
+train_set="train_10h"
+valid_set="dev_clean"
+test_sets="test_clean test_other dev_clean dev_other"
 
-asr_config=conf/tuning/train_hubert_char.yaml
-inference_config=conf/decode_asr_char.yaml
+asr_config=conf/tuning/train_asr_hubert_base_10h_finetuning.yaml
+inference_config=conf/decode_asr.yaml
+
 
 ./asr.sh \
-    --stage 12 \
-    --stop_stage 13 \
     --lang en \
-    --ngpu 2 \
-    --token_type char \
+    --ngpu 0 \
+    --nj 4 \
     --max_wav_duration 30 \
     --asr_config "${asr_config}" \
+    --use_lm false \
     --inference_config "${inference_config}" \
     --train_set "${train_set}" \
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \
-    --lm_train_text "data/${train_set}/text" \
-    --bpe_train_text "data/${train_set}/text" "$@"
+    --token_type char \
+    --inference_asr_model valid.loss.ave.pth \
+    --feats-normalize null "$@"

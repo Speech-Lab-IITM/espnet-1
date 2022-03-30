@@ -1,7 +1,7 @@
 grad_clip: 5.0
 batch_type: numel
 batch_bins: 20000000
-accum_grad: 1
+accum_grad: 4
 max_epoch: 200
 patience: none
 # The initialization method for model parameters
@@ -56,7 +56,7 @@ model_conf:
 
 optim: adam
 optim_conf:
-    lr: 0.0002
+    lr: 0.0001
 scheduler: warmuplr
 scheduler_conf:
     warmup_steps: 25000

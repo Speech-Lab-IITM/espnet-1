@@ -143,7 +143,7 @@ class CommonPreprocessor(AbsPreprocessor):
         noise_db_range: str = "3_10",
         speech_volume_normalize: float = None,
         speech_name: str = "speech",
-        text_name: Union[str, Iterable[str]] = "text",
+        text_name: list = ["text"],
     ):
         super().__init__(train)
         self.train = train

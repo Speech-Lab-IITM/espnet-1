@@ -103,7 +103,7 @@ class FairseqHubertEncoder(AbsEncoder):
                 map_location=torch.device("cpu"),
             )
 
-            if all("encoder.encoder" in k for k in s):
+            if all(("encoder.encoder" in k or "decoder." in k) for k in s): # added for loading jointly pretrained models
                 try:
                     state = {
                         k.replace("encoder.encoder.", ""): v

@@ -18,7 +18,7 @@ dictdir=data/HuBERT6_km500_token_list_iter1/word
 
 ./joint_pretraining.sh \
     --lang en \
-    --ngpu 8 \
+    --ngpu 4 \
     --max_wav_duration 30 \
     --dictdir "${dictdir}" \
     --asr_config "${asr_config}" \

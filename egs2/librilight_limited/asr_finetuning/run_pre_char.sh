@@ -7,13 +7,14 @@ set -o pipefail
 
 source path.sh
 
-train_set="train_clean_100"
+train_set="train_10h"
 valid_set="dev"
-test_sets="test_other"
+test_sets="test_clean test_other"
 #test_sets="test_clean test_other dev_clean dev_other"
 
-asr_config=conf/tuning/train_hubert_char.yaml
-inference_config=conf/decode_asr_char.yaml
+asr_config=
+#inference_config=conf/decode_asr_char.yaml
+inference_asr_model=valid.loss.best.pth
 
 ./asr.sh \
     --stage 12 \
@@ -23,7 +24,7 @@ inference_config=conf/decode_asr_char.yaml
     --token_type char \
     --max_wav_duration 30 \
     --asr_config "${asr_config}" \
-    --inference_config "${inference_config}" \
+    --inference_asr_model "${inference_asr_model}" \
     --train_set "${train_set}" \
     --valid_set "${valid_set}" \
     --test_sets "${test_sets}" \

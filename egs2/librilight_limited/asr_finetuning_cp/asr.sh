@@ -33,7 +33,7 @@ skip_upload_hf=true  # Skip uploading to hugging face stages.
 ngpu=1               # The number of gpus ("0" uses cpu, otherwise use gpu).
 num_nodes=1          # The number of nodes.
 nj=32                # The number of parallel jobs.
-inference_nj=6      # The number of parallel jobs in decoding.
+inference_nj=8      # The number of parallel jobs in decoding.
 gpu_inference=true  # Whether to perform gpu decoding.
 dumpdir=dump         # Directory to dump features.
 expdir=exp           # Directory to save experiments.
@@ -385,6 +385,8 @@ if [ -z "${asr_stats_dir}" ]; then
     if [ -n "${speed_perturb_factors}" ]; then
         asr_stats_dir+="_sp"
     fi
+    # append train_set info
+    asr_stats_dir+="_${train_set}"
 fi
 if [ -z "${lm_stats_dir}" ]; then
     if [ "${lang}" != noinfo ]; then

@@ -19,13 +19,13 @@ freeze_param: [
 input_size: 1
 encoder: hubert
 encoder_conf:
-    output_size: 256
+    output_size: 768
     normalize_before: false
     freeze_finetune_updates: 10000
     # if use espent-trained model
     hubert_url: espnet
-    hubert_dir_path: /nlsasfs/home/nltm-pilot/arunk/espnet_arun/espnet/egs2/librispeech/ssl_asr_scratch/exp/asr_joint_pretraining_scratch_libri360_0.5_lre-4/checkpoints_backup/101epoch.pth
-
+    #hubert_dir_path: /nlsasfs/home/nltm-pilot/arunk/espnet_arun/espnet/egs2/librispeech/ssl_asr_scratch/exp/asr_joint_pretraining_scratch_libri360_0.5_lre-4/checkpoints_backup/101epoch.pth
+    hubert_dir_path: /nlsasfs/home/nltm-pilot/arunk/espnet_arun/espnet/egs2/librispeech/ssl_asr_scratch/exp/asr_hubert_pretraining_scratch_libri360_lre-4/checkpoints_backup/101epoch.pth
 
 decoder: transformer
 decoder_conf:
@@ -38,7 +38,7 @@ decoder_conf:
     src_attention_dropout_rate: 0.1
 
 model_conf:
-    ctc_weight: 1.0
+    ctc_weight: 0.3
     lsm_weight: 0.1
     length_normalized_loss: false
 

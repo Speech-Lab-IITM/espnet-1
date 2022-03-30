@@ -24,18 +24,11 @@ encoder_conf:
     freeze_finetune_updates: 10000
     # if use espent-trained model
     hubert_url: espnet
-    hubert_dir_path: /nlsasfs/home/nltm-pilot/arunk/espnet_arun/espnet/egs2/librispeech/ssl_asr_scratch/exp/asr_joint_pretraining_scratch_libri360_0.5_lre-4/checkpoints_backup/101epoch.pth
+    hubert_dir_path: ../../librispeech/ssl1/exp/pretrain_train_asr_hubert_base_960h_pretrain_it1_raw_iter1/valid.acc.best.pth
+    # if use downloaded model:
+    #hubert_url: https://dl.fbaipublicfiles.com/hubert/hubert_base_ls960.pt
+    #hubert_dir_path: ./downloads/hubert_pretrained_models/hubert_base_ls960.pt
 
-
-decoder: transformer
-decoder_conf:
-    attention_heads: 8
-    linear_units: 2048
-    num_blocks: 6
-    dropout_rate: 0.1
-    positional_dropout_rate: 0.1
-    self_attention_dropout_rate: 0.1
-    src_attention_dropout_rate: 0.1
 
 model_conf:
     ctc_weight: 1.0
