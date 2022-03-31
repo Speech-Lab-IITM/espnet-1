@@ -141,6 +141,9 @@ class HubertPretrainModel(AbsESPnetModel):
             encoder_out[1], dataset_type, 1
         )
 
+        #print("loss_1",loss_1)
+        #print("loss_2",loss_2)
+        #exit()
         loss = (torch.sum(data_mask_1) * loss_1 + torch.sum(data_mask_2) * loss_2)/(torch.sum(data_mask_1)+torch.sum(data_mask_2))
         acc_mask = (torch.sum(data_mask_1) * acc_mask_1 + torch.sum(data_mask_2) * acc_mask_2)/(torch.sum(data_mask_1)+torch.sum(data_mask_2))
         acc_unmask = (torch.sum(data_mask_1) * acc_unmask_1 + torch.sum(data_mask_2) * acc_unmask_2)/(torch.sum(data_mask_1)+torch.sum(data_mask_2))
@@ -210,9 +213,9 @@ class HubertPretrainModel(AbsESPnetModel):
         encoder_out = []
         for enc in self.data_specific_encoders:
             out = x
-            for layer in range(len(enc)-2):
+            for layer in range(len(enc)-1):
                 out = enc[layer](x=out, self_attn_padding_mask=padding_mask)[0]
-            out = enc[-2](out)
+            #out = enc[-1](out)
             #print("out",out.shape)
             encoder_out.append(out.transpose(0, 1))
             """
@@ -347,27 +350,57 @@ class HubertPretrainModel(AbsESPnetModel):
         loss_att, logp_m_list, logp_u_list = self.criterion_att(
             self.encoder.encoder, encoder_out, reduce=None
         )   #reduce=None added for multidata
-
+        
         # mask logic added for multidata
+        #print("loss_att",loss_att)
+        #print("loss_att_shape",loss_att.shape)
+        #loss_att=torch.unsqueeze(loss_att,0)
+        #print("loss_att_shape_unsqu",loss_att.shape)
         data_mask = dataset_type == key
-        loss_att = torch.mean(torch.masked_select(loss_att, data_mask))
-        indices = torch.tensor([i for i,val in enumerate(data_mask) if val]).cuda()
+        #print("data_mask",data_mask.shape)
+        #print("data_mask",data_mask)
+        loss_att=torch.reshape(loss_att,(data_mask.shape[0],-1))
+        #print("loss_att_shape",loss_att.shape)
 
+        loss_att = torch.masked_select(loss_att, data_mask)
+        #print("loss_att_shape",loss_att.shape)
+        loss_att=torch.reshape(loss_att,(-1,))
+        #print("loss_att_shape",loss_att.shape)
+        #exit()
+        loss_att=torch.sum(loss_att)
+        indices = torch.tensor([i for i,val in enumerate(data_mask) if val]).cuda()
+        #print("logp_m_list",logp_m_list[0].shape)
+        #exit()
+        
         corr_masked, count_masked = 0, 0
         corr_unmask, count_unmask = 0, 0
         with torch.no_grad():
             for i, logp_m in enumerate(logp_m_list):
+                #print("logp_m",logp_m.shape)
+                logp_m=torch.reshape(logp_m,(data_mask.shape[0],-1,505))
                 logp_m = torch.index_select(logp_m, 0, indices)
+                logp_m = torch.reshape(logp_m,(-1,505))
+                #print(logp_m.shape)
+                
                 corr_m, count_m = self.compute_correct(logp_m)
                 corr_masked += corr_m
                 count_masked += count_m
+            """
             for i, logp_u in enumerate(logp_u_list):
+                logp_u=torch.reshape(logp_u,(data_mask.shape[0],-1,505))
                 logp_u = torch.index_select(logp_u, 0, indices)
+                logp_u = torch.reshape(logp_u,(-1,505))
                 corr_u, count_u = self.compute_correct(logp_u)
                 corr_unmask += corr_u
                 count_unmask += count_u
-
+            """
         acc_att_m = corr_masked / (count_masked + 1e-10)
-        acc_att_u = corr_unmask / (count_unmask + 1e-10)
-
+        #acc_att_u = corr_unmask / (count_unmask + 1e-10)
+        
+        #data_mask = dataset_type == key
+        #loss_att=100
+        #acc_att_m=1
+        acc_att_u=0.0001
+        #print(acc_att_m)
+        #exit()
         return loss_att, acc_att_m, acc_att_u, data_mask

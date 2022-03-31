@@ -78,6 +78,9 @@ class FairseqHubertEncoder(AbsEncoder):
             print("Error: FairSeq is not properly installed.")
             print("Please install FairSeq: cd ${MAIN_ROOT}/tools && make fairseq.done")
             raise e
+        
+
+
 
         arg_overrides = {
             "dropout": dropout_rate,
@@ -94,6 +97,7 @@ class FairseqHubertEncoder(AbsEncoder):
             "encoder_layerdrop": layerdrop,
             "feature_grad_mult": feature_grad_mult,
             "data": hubert_dir_path,
+            
         }
 
         if hubert_url == "espnet":
@@ -383,12 +387,13 @@ def download_hubert(model_url, dir_path):
 
     model_name = model_url.split("/")[-1]
     model_path = os.path.join(dir_path, model_name)
-
+    print(model_path)
+    print(os.path.exists(model_path))
     with FileLock(model_path + ".lock"):
         if not os.path.exists(model_path):
             torch.hub.download_url_to_file(model_url, model_path)
             logging.info(f"Hubert model downloaded {model_path}")
         else:
             logging.info(f"Hubert model {model_path} already exists.")
-
+     
     return model_path

@@ -55,6 +55,14 @@ class NumElementsBatchSampler(AbsSampler):
         # Sort samples in ascending order
         # (shape order should be like (Length, Dim))
         keys = sorted(first_utt2shape, key=lambda k: first_utt2shape[k][0])
+        #print(keys)
+        #exit()
+        #print(keys[0:2])
+        #print(keys.type())
+        #import random  ####Change
+        #random.shuffle(keys) ####Change
+        #print(keys[0:2])
+        #exit()
         if len(keys) == 0:
             raise RuntimeError(f"0 lines found: {shape_files[0]}")
         if padding:

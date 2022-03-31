@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# Thanks to Abdelrahman Mohamed and Wei-Ning Hsu's help in this implementation,
+# Their origial Hubert work is in:
+#     Paper: https://arxiv.org/pdf/2106.07447.pdf
+#     Code in Fairseq: https://github.com/pytorch/fairseq/tree/master/examples/hubert
 import argparse
 import logging
 from typing import Callable
@@ -12,51 +19,18 @@ import torch
 from typeguard import check_argument_types
 from typeguard import check_return_type
 
-from espnet2.asr.ctc import CTC
-from espnet2.asr.decoder.abs_decoder import AbsDecoder
-from espnet2.asr.decoder.rnn_decoder import RNNDecoder
-from espnet2.asr.decoder.transformer_decoder import (
-    DynamicConvolution2DTransformerDecoder,  # noqa: H301
-)
-from espnet2.asr.decoder.transformer_decoder import DynamicConvolutionTransformerDecoder
-from espnet2.asr.decoder.transformer_decoder import (
-    LightweightConvolution2DTransformerDecoder,  # noqa: H301
-)
-from espnet2.asr.decoder.transformer_decoder import (
-    LightweightConvolutionTransformerDecoder,  # noqa: H301
-)
-from espnet2.asr.decoder.transformer_decoder import TransformerDecoder
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
-from espnet2.asr.encoder.conformer_encoder import ConformerEncoder
-from espnet2.asr.encoder.hubert_encoder_ssl_finetune_asr import FairseqHubertEncoder
-from espnet2.asr.encoder.hubert_encoder_ssl_finetune_asr import FairseqHubertPretrainEncoder
-from espnet2.asr.encoder.rnn_encoder import RNNEncoder
-from espnet2.asr.encoder.transformer_encoder import TransformerEncoder
-from espnet2.asr.encoder.contextual_block_transformer_encoder import (
-    ContextualBlockTransformerEncoder,  # noqa: H301
+from espnet2.asr.encoder.hubert_encoder import (
+    FairseqHubertEncoder,  ####Change
 )
-from espnet2.asr.encoder.contextual_block_conformer_encoder import (
-    ContextualBlockConformerEncoder,  # noqa: H301
-)
-from espnet2.asr.encoder.vgg_rnn_encoder import VGGRNNEncoder
-from espnet2.asr.encoder.wav2vec2_encoder import FairSeqWav2Vec2Encoder
-from espnet2.asr.espnet_model import ESPnetASRModel
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
 from espnet2.asr.frontend.default import DefaultFrontend
-from espnet2.asr.frontend.fused import FusedFrontends
-from espnet2.asr.frontend.s3prl import S3prlFrontend
 from espnet2.asr.frontend.windowing import SlidingWindow
-from espnet2.asr.postencoder.abs_postencoder import AbsPostEncoder
-from espnet2.asr.postencoder.hugging_face_transformers_postencoder import (
-    HuggingFaceTransformersPostEncoder,  # noqa: H301
-)
 from espnet2.asr.preencoder.abs_preencoder import AbsPreEncoder
-from espnet2.asr.preencoder.linear import LinearProjection
 from espnet2.asr.preencoder.sinc import LightweightSincConvs
 from espnet2.asr.specaug.abs_specaug import AbsSpecAug
 from espnet2.asr.specaug.specaug import SpecAug
-from espnet2.asr.transducer.joint_network import JointNetwork
-from espnet2.asr.transducer.transducer_decoder import TransducerDecoder
+from espnet2.multidata_hubert.espnet_model import HubertPretrainModel #### For multidata
 from espnet2.layers.abs_normalize import AbsNormalize
 from espnet2.layers.global_mvn import GlobalMVN
 from espnet2.layers.utterance_mvn import UtteranceMVN
@@ -73,23 +47,18 @@ from espnet2.utils.types import float_or_none
 from espnet2.utils.types import int_or_none
 from espnet2.utils.types import str2bool
 from espnet2.utils.types import str_or_none
+from fairseq.models.wav2vec.wav2vec2 import TransformerSentenceEncoderLayer
+from fairseq.models.hubert.hubert import HubertConfig
 
 frontend_choices = ClassChoices(
     name="frontend",
-    classes=dict(
-        default=DefaultFrontend,
-        sliding_window=SlidingWindow,
-        s3prl=S3prlFrontend,
-        fused=FusedFrontends,
-    ),
+    classes=dict(default=DefaultFrontend, sliding_window=SlidingWindow),
     type_check=AbsFrontend,
     default="default",
 )
 specaug_choices = ClassChoices(
     name="specaug",
-    classes=dict(
-        specaug=SpecAug,
-    ),
+    classes=dict(specaug=SpecAug),
     type_check=AbsSpecAug,
     default=None,
     optional=True,
@@ -108,54 +77,23 @@ preencoder_choices = ClassChoices(
     name="preencoder",
     classes=dict(
         sinc=LightweightSincConvs,
-        linear=LinearProjection,
     ),
     type_check=AbsPreEncoder,
     default=None,
     optional=True,
 )
+#### Change 
 encoder_choices = ClassChoices(
     "encoder",
     classes=dict(
-        conformer=ConformerEncoder,
-        transformer=TransformerEncoder,
-        contextual_block_transformer=ContextualBlockTransformerEncoder,
-        contextual_block_conformer=ContextualBlockConformerEncoder,
-        vgg_rnn=VGGRNNEncoder,
-        rnn=RNNEncoder,
-        wav2vec2=FairSeqWav2Vec2Encoder,
         hubert=FairseqHubertEncoder,
-        hubert_pretrain=FairseqHubertPretrainEncoder,
     ),
     type_check=AbsEncoder,
-    default="rnn",
-)
-postencoder_choices = ClassChoices(
-    name="postencoder",
-    classes=dict(
-        hugging_face_transformers=HuggingFaceTransformersPostEncoder,
-    ),
-    type_check=AbsPostEncoder,
-    default=None,
-    optional=True,
-)
-decoder_choices = ClassChoices(
-    "decoder",
-    classes=dict(
-        transformer=TransformerDecoder,
-        lightweight_conv=LightweightConvolutionTransformerDecoder,
-        lightweight_conv2d=LightweightConvolution2DTransformerDecoder,
-        dynamic_conv=DynamicConvolutionTransformerDecoder,
-        dynamic_conv2d=DynamicConvolution2DTransformerDecoder,
-        rnn=RNNDecoder,
-        transducer=TransducerDecoder,
-    ),
-    type_check=AbsDecoder,
-    default="rnn",
+    default="hubert",
 )
 
 
-class ASRTask(AbsTask):
+class MultiDataHubertTask(AbsTask):
     # If you need more than one optimizers, change this value
     num_optimizers: int = 1
 
@@ -171,10 +109,6 @@ class ASRTask(AbsTask):
         preencoder_choices,
         # --encoder and --encoder_conf
         encoder_choices,
-        # --postencoder and --postencoder_conf
-        postencoder_choices,
-        # --decoder and --decoder_conf
-        decoder_choices,
     ]
 
     # If you need to modify train() or eval() procedures, change Trainer class here
@@ -194,6 +128,13 @@ class ASRTask(AbsTask):
             type=str_or_none,
             default=None,
             help="A text mapping int-id to token",
+        )
+        # Added for multidata configuration
+        group.add_argument(
+            "--data_specific_blocks",
+            type=int_or_none,
+            default=3,
+            help="The number of data specific encoder blocks",
         )
         group.add_argument(
             "--init",
@@ -218,21 +159,9 @@ class ASRTask(AbsTask):
         )
 
         group.add_argument(
-            "--ctc_conf",
-            action=NestedDictAction,
-            default=get_default_kwargs(CTC),
-            help="The keyword arguments for CTC class.",
-        )
-        group.add_argument(
-            "--joint_net_conf",
-            action=NestedDictAction,
-            default=None,
-            help="The keyword arguments for joint network class.",
-        )
-        group.add_argument(
             "--model_conf",
             action=NestedDictAction,
-            default=get_default_kwargs(ESPnetASRModel),
+            default=get_default_kwargs(HubertPretrainModel),
             help="The keyword arguments for model class.",
         )
 
@@ -311,6 +240,30 @@ class ASRTask(AbsTask):
             default="13_15",
             help="The range of noise decibel level.",
         )
+        parser.add_argument(
+            "--pred_masked_weight",
+            type=float,
+            default=1.0,
+            help="weight for predictive loss for masked frames",
+        )
+        parser.add_argument(
+            "--pred_nomask_weight",
+            type=float,
+            default=0.0,
+            help="weight for predictive loss for unmasked frames",
+        )
+        parser.add_argument(
+            "--loss_weights",
+            type=float,
+            default=0.0,
+            help="weights for additional loss terms (not first one)",
+        )
+        parser.add_argument(
+            "--hubert_dict",
+            type=str,
+            default="./dict.txt",
+            help="word-based target dictionary for Hubert pretraining stage",
+        )
 
         for class_choices in cls.class_choices_list:
             # Append --<name> and --<name>_conf.
@@ -325,7 +278,6 @@ class ASRTask(AbsTask):
         Tuple[List[str], Dict[str, torch.Tensor]],
     ]:
         assert check_argument_types()
-        # NOTE(kamo): int value = 0 is reserved by CTC-blank symbol
         return CommonCollateFn(float_pad_value=0.0, int_pad_value=-1)
 
     @classmethod
@@ -368,7 +320,7 @@ class ASRTask(AbsTask):
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
         if not inference:
-            retval = ("speech", "text")
+            retval = ("speech", "text",)
         else:
             # Recognition mode
             retval = ("speech",)
@@ -378,17 +330,16 @@ class ASRTask(AbsTask):
     def optional_data_names(
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
-        retval = ()
+        retval = ("dataset_type", ) # changed for multidata
         assert check_return_type(retval)
         return retval
 
     @classmethod
-    def build_model(cls, args: argparse.Namespace) -> ESPnetASRModel:
+    def build_model(cls, args: argparse.Namespace) -> HubertPretrainModel:
         assert check_argument_types()
         if isinstance(args.token_list, str):
             with open(args.token_list, encoding="utf-8") as f:
                 token_list = [line.rstrip() for line in f]
-
             # Overwriting token_list to keep it as "portable".
             args.token_list = list(token_list)
         elif isinstance(args.token_list, (tuple, list)):
@@ -434,72 +385,89 @@ class ASRTask(AbsTask):
         else:
             preencoder = None
 
-        # 4. Encoder
+        # 4. Encoder - Common
+        # For multidata
+        args.encoder_conf['num_blocks'] = (args.encoder_conf['num_blocks'] if args.encoder_conf['num_blocks'] is not None else 12) - args.data_specific_blocks
         encoder_class = encoder_choices.get_class(args.encoder)
-        encoder = encoder_class(input_size=input_size, **args.encoder_conf)
-
-        # 5. Post-encoder block
-        # NOTE(kan-bayashi): Use getattr to keep the compatibility
-        encoder_output_size = encoder.output_size()
-        if getattr(args, "postencoder", None) is not None:
-            postencoder_class = postencoder_choices.get_class(args.postencoder)
-            postencoder = postencoder_class(
-                input_size=encoder_output_size, **args.postencoder_conf
-            )
-            encoder_output_size = postencoder.output_size()
-        else:
-            postencoder = None
-
-        # 5. Decoder
-        decoder_class = decoder_choices.get_class(args.decoder)
-
-        if args.decoder == "transducer":
-            decoder = decoder_class(
-                vocab_size,
-                embed_pad=0,
-                **args.decoder_conf,
-            )
-
-            joint_network = JointNetwork(
-                vocab_size,
-                encoder.output_size(),
-                decoder.dunits,
-                **args.joint_net_conf,
-            )
-        else:
-            decoder = decoder_class(
-                vocab_size=vocab_size,
-                encoder_output_size=encoder_output_size,
-                **args.decoder_conf,
-            )
-
-            joint_network = None
-
-        # 6. CTC
-        ctc = CTC(
-            odim=vocab_size, encoder_output_sizse=encoder_output_size, **args.ctc_conf
+        ###Change
+        encoder = encoder_class(
+            input_size=input_size,
+            **args.encoder_conf,
         )
 
+        # For multidata
+        args.encoder_conf['num_blocks'] = args.data_specific_blocks
+        """
+        cfg_overides = {
+            "encoder_embed_dim": args.encoder_conf['output_size'],
+            "encoder_ffn_embed_dim": args.encoder_conf['linear_units'],
+            "encoder_attention_heads": args.encoder_conf['attention_heads'],
+            "encoder_layers": args.encoder_conf['num_blocks'],
+            "final_dim": args.encoder_conf['output_size'],
+            "dropout": args.encoder_conf['dropout_rate'],
+            "attention_dropout": args.encoder_conf['attention_dropout_rate'],
+            "label_rate": args.encoder_conf['label_rate'],
+        }
+              
+        cfg_overides = {**cfg_overides, **args.encoder_conf}
+        cfg = HubertConfig()
+        for key, value in cfg_overides.items():
+            if hasattr(cfg, key):
+                setattr(cfg, key, value)
+        """
+        data_specific_encoders = []
+        """
+        data_specific_encoders.append(TransformerEncoder(cfg))
+        data_specific_encoders.append(TransformerEncoder(cfg))
+        data_specific_encoders = torch.nn.ModuleList(data_specific_encoders)
+        """
+        Transformer1=[]
+        Transformer2=[]
+        for i in range(args.data_specific_blocks):
+            """
+            Transformer.append(TransformerSentenceEncoderLayer("embedding_dim": args.encoder_conf['output_size'],"ffn_embedding_dim": args.encoder_conf['linear_units'],"num_attention_heads": args.encoder_conf['attention_heads'],"dropout": args.encoder_conf['dropout_rate'],"attention_dropout": args.encoder_conf['attention_dropout_rate'],"activation_dropout": 0.1,"activation_fn": "relu","layer_norm_first": False))
+            
+            Transformer1.append(TransformerSentenceEncoderLayer(args.transformer_conf['output_size'],args.transformer_conf['linear_units'],args.transformer_conf['attention_heads'],args.transformer_conf['dropout_rate'],args.transformer_conf['attention_dropout_rate'],0.1,"relu",False))
+            Transformer2.append(TransformerSentenceEncoderLayer(args.transformer_conf['output_size'],args.transformer_conf['linear_units'],args.transformer_conf['attention_heads'],args.transformer_conf['dropout_rate'],args.transformer_conf['attention_dropout_rate'],0.1,"relu",False))
+            """
+            Transformer1.append(TransformerSentenceEncoderLayer(args.encoder_conf['output_size'],args.encoder_conf['linear_units'],args.encoder_conf['attention_heads'],args.encoder_conf['dropout_rate'],args.encoder_conf['attention_dropout_rate'],0.1,"relu",False))
+
+            Transformer2.append(TransformerSentenceEncoderLayer(args.encoder_conf['output_size'],args.encoder_conf['linear_units'],args.encoder_conf['attention_heads'],args.encoder_conf['dropout_rate'],args.encoder_conf['attention_dropout_rate'],0.1,"relu",False))
+        from fairseq.modules import LayerNorm
+        import torch.nn as nn
+
+        Transformer1.append(LayerNorm(args.encoder_conf['output_size']))
+        Transformer1.append(nn.Linear(args.encoder_conf['output_size'], args.encoder_conf['final_dim']))
+        Transformer2.append(LayerNorm(args.encoder_conf['output_size']))
+        Transformer2.append(nn.Linear(args.encoder_conf['output_size'], args.encoder_conf['final_dim']))
+        Transformer1=torch.nn.ModuleList(Transformer1)
+        Transformer2=torch.nn.ModuleList(Transformer2)
+        data_specific_encoders.append(Transformer1)
+        data_specific_encoders.append(Transformer2)
+        data_specific_encoders = torch.nn.ModuleList(data_specific_encoders)        
+        label_embs_concat_0 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['final_dim']))
+        label_embs_concat_1 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['final_dim']))
+
         # 8. Build model
-        model = ESPnetASRModel(
+        model = HubertPretrainModel(
             vocab_size=vocab_size,
             frontend=frontend,
             specaug=specaug,
             normalize=normalize,
             preencoder=preencoder,
             encoder=encoder,
-            postencoder=postencoder,
-            decoder=decoder,
-            ctc=ctc,
-            joint_network=joint_network,
+            data_specific_encoders=data_specific_encoders,
+            label_embs_concat_0=label_embs_concat_0,
+            label_embs_concat_1=label_embs_concat_1,
             token_list=token_list,
             **args.model_conf,
         )
 
-        # FIXME(kamo): Should be done in model?
-        # 9. Initialize
-        if args.init is not None:
+        # 9. Initialize  #####set it to None
+        if args.init is not None:   
             initialize(model, args.init)
-
+        ####Change Extra loading of data_specific_layers happen here, hubert encoder happens while model building
+        data_specific_encoders.load_state_dict(torch.load('/nlsasfs/home/nltm-pilot/metilda/multitask_gen_nptel_100_100_ssl/multitask/b.pt'))
+       
         assert check_return_type(model)
         return model

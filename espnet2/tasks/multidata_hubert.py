@@ -432,17 +432,17 @@ class MultiDataHubertTask(AbsTask):
         from fairseq.modules import LayerNorm
         import torch.nn as nn
 
-        Transformer1.append(LayerNorm(args.encoder_conf['output_size']))
+        #Transformer1.append(LayerNorm(args.encoder_conf['output_size']))
         Transformer1.append(nn.Linear(args.encoder_conf['output_size'], args.encoder_conf['final_dim']))
-        Transformer2.append(LayerNorm(args.encoder_conf['output_size']))
+        #Transformer2.append(LayerNorm(args.encoder_conf['output_size']))
         Transformer2.append(nn.Linear(args.encoder_conf['output_size'], args.encoder_conf['final_dim']))
         Transformer1=torch.nn.ModuleList(Transformer1)
         Transformer2=torch.nn.ModuleList(Transformer2)
         data_specific_encoders.append(Transformer1)
         data_specific_encoders.append(Transformer2)
         data_specific_encoders = torch.nn.ModuleList(data_specific_encoders)        
-        label_embs_concat_0 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['output_size']))
-        label_embs_concat_1 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['output_size']))
+        label_embs_concat_0 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['final_dim']))
+        label_embs_concat_1 = torch.nn.Parameter(torch.FloatTensor(sum(encoder.encoder.num_classes), args.encoder_conf['final_dim']))
 
         # 8. Build model
         model = HubertPretrainModel(
@@ -462,6 +462,8 @@ class MultiDataHubertTask(AbsTask):
         # 9. Initialize
         if args.init is not None:
             initialize(model, args.init)
+        
+
 
         assert check_return_type(model)
         return model

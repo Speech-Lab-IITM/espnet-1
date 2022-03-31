@@ -185,6 +185,8 @@ class ESPnetASRModel(AbsESPnetModel):
 
         # 1. Encoder
         encoder_out, encoder_out_lens = self.encode(speech, speech_lengths)
+        #print(encoder_out.shape)
+        #print(encoder_out_lens.shape)
         intermediate_outs = None
         if isinstance(encoder_out, tuple):
             intermediate_outs = encoder_out[1]
