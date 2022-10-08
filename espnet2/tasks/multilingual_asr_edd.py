@@ -37,6 +37,7 @@ from espnet2.asr.encoder.transformer_encoder import TransformerEncoder
 from espnet2.asr.encoder.vgg_rnn_encoder import VGGRNNEncoder
 from espnet2.asr.encoder.wav2vec2_encoder import FairSeqWav2Vec2Encoder
 from espnet2.asr.espnet_model import ESPnetASRModel
+from espnet2.asr.multilingual_edd_model import MultilingualEDDASRModel
 from espnet2.asr.frontend.abs_frontend import AbsFrontend
 from espnet2.asr.frontend.default import DefaultFrontend
 from espnet2.asr.frontend.fused import FusedFrontends
@@ -103,6 +104,7 @@ model_choices = ClassChoices(
     classes=dict(
         espnet=ESPnetASRModel,
         maskctc=MaskCTCModel,
+        multilingual=MultilingualEDDASRModel,
     ),
     type_check=AbsESPnetModel,
     default="espnet",
@@ -380,7 +382,7 @@ class MultilingualASRTask(AbsTask):
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
         if not inference:
-            retval = ("speech", "text")
+            retval = ("speech", "text", "speech2", "text2")
         else:
             # Recognition mode
             retval = ("speech",)
@@ -484,11 +486,19 @@ class MultilingualASRTask(AbsTask):
                 encoder_output_size=encoder_output_size,
                 **args.decoder_conf,
             )
+            decoder2 = TransformerDecoderDA(
+                vocab_size=vocab_size,
+                encoder_output_size=encoder_output_size,
+                **args.decoder_conf,
+            )
 
             joint_network = None
 
         # 6. CTC
         ctc = CTC(
+            odim=vocab_size, encoder_output_size=encoder_output_size, **args.ctc_conf
+        )
+        ctc2 = CTC(
             odim=vocab_size, encoder_output_size=encoder_output_size, **args.ctc_conf
         )
 
@@ -506,7 +516,9 @@ class MultilingualASRTask(AbsTask):
             encoder=encoder,
             postencoder=postencoder,
             decoder=decoder,
+            decoder2=decoder2,
             ctc=ctc,
+            ctc2=ctc2,
             joint_network=joint_network,
             token_list=token_list,
             **args.model_conf,
