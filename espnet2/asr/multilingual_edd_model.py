@@ -41,6 +41,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         self,
         vocab_size: int,
         token_list: Union[Tuple[str, ...], List[str]],
+        token_list2: Union[Tuple[str, ...], List[str]],
         frontend: Optional[AbsFrontend],
         specaug: Optional[AbsSpecAug],
         normalize: Optional[AbsNormalize],
@@ -77,6 +78,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         self.ctc_weight = ctc_weight
         self.interctc_weight = interctc_weight
         self.token_list = token_list.copy()
+        self.token_list2 = token_list2.copy()
 
         self.frontend = frontend
         self.specaug = specaug
@@ -95,6 +97,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         self.use_transducer_decoder = joint_network is not None
 
         self.error_calculator = None
+        self.error_calculator2 = None
 
         if self.use_transducer_decoder:
             logging.warning('transducer decoder is not supported in this setup')
@@ -114,9 +117,19 @@ class MultilingualEDDASRModel(AbsESPnetModel):
                 normalize_length=length_normalized_loss,
             )
 
+            self.criterion_att2 = LabelSmoothingLoss(
+                size=vocab_size,
+                padding_idx=ignore_id,
+                smoothing=lsm_weight,
+                normalize_length=length_normalized_loss,
+            )
+
             if report_cer or report_wer:
                 self.error_calculator = ErrorCalculator(
                     token_list, sym_space, sym_blank, report_cer, report_wer
+                )
+                self.error_calculator2 = ErrorCalculator(
+                    token_list2, sym_space, sym_blank, report_cer, report_wer
                 )
 
         if ctc_weight == 0.0:
@@ -183,7 +196,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
                 encoder_out, encoder_out_lens, text, text_lengths
             )
 
-            loss_ctc2, cer_ctc2 = self._calc_ctc_loss(
+            loss_ctc2, cer_ctc2 = self._calc_ctc_loss2(
                 encoder_out, encoder_out_lens, text2, text2_lengths
             )
 
@@ -193,6 +206,8 @@ class MultilingualEDDASRModel(AbsESPnetModel):
 
             stats["loss_ctc2"] = loss_ctc2.detach() if loss_ctc2 is not None else None
             stats["cer_ctc2"] = cer_ctc2
+
+        loss_ctc = loss_ctc + loss_ctc2
 
         # Intermediate CTC (optional)
         loss_interctc = 0.0
@@ -224,14 +239,32 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         else:
             # 2b. Attention decoder branch
             if self.ctc_weight != 1.0:
-                loss_att, acc_att, cer_att, wer_att, decoder_out, decoder_out_lens = self._calc_att_loss(
+                loss_att, acc_att, cer_att, wer_att, decoder_embeddings, decoder_out_lens = self._calc_att_loss(
                     encoder_out, encoder_out_lens, text, text_lengths
                 )
 
-                loss_att2, acc_att2, cer_att2, wer_att2 = self._calc_dual_att_loss(
-                    encoder_out, encoder_out_lens, decoder_out, decoder_out_lens, text2, text2_lengths
+                # print("~~~~~~~~~~~~")
+                # print("text_lengths", text_lengths.size())
+                # print(text_lengths)
+                # print("max of text_lengths", max(text_lengths))
+                # print("~~~~~~~~~~~~")
+
+                loss_att2, acc_att2, cer_att2, wer_att2, decoder_out2, decoder_out_lens2 = self._calc_dual_att_loss(
+                    encoder_out, encoder_out_lens, decoder_embeddings, text_lengths+1, text2, text2_lengths
                 )
 
+            # Collect Attn branch stats
+            stats["loss_att"] = loss_att.detach() if loss_att is not None else None
+            stats["acc"] = acc_att
+            stats["cer"] = cer_att
+            stats["wer"] = wer_att
+
+            stats["loss_att2"] = loss_att2.detach() if loss_att is not None else None
+            stats["acc2"] = acc_att2
+            stats["cer2"] = cer_att2
+            stats["wer2"] = wer_att2
+
+            loss_att = loss_att + loss_att2
             # 3. CTC-Att loss definition
             if self.ctc_weight == 0.0:
                 loss = loss_att
@@ -239,12 +272,6 @@ class MultilingualEDDASRModel(AbsESPnetModel):
                 loss = loss_ctc
             else:
                 loss = self.ctc_weight * loss_ctc + (1 - self.ctc_weight) * loss_att
-
-            # Collect Attn branch stats
-            stats["loss_att"] = loss_att.detach() if loss_att is not None else None
-            stats["acc"] = acc_att
-            stats["cer"] = cer_att
-            stats["wer"] = wer_att
 
         # Collect total loss stats
         stats["loss"] = loss.detach()
@@ -436,6 +463,49 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         assert nll.size(0) == total_num
         return nll
 
+    def _calc_dual_att_loss(
+        self,
+        encoder_out: torch.Tensor,
+        encoder_out_lens: torch.Tensor,
+        decoder_out: torch.Tensor,
+        decoder_out_lens: torch.Tensor,
+        ys_pad: torch.Tensor,
+        ys_pad_lens: torch.Tensor,
+    ):
+        ys_in_pad, ys_out_pad = add_sos_eos(ys_pad, self.sos, self.eos, self.ignore_id)
+        ys_in_lens = ys_pad_lens + 1
+
+        # 1. Forward decoder
+        # print("---------------------")
+        # print("encoder_out:",encoder_out.size())
+        # print("encoder_out_lens:",encoder_out_lens.size())
+        # print("decoder_out:",decoder_out.size())
+        # print("decoder_out_lens:",decoder_out_lens.size())
+        # print(decoder_out_lens[0])
+        # print("---------------------")
+        # exit(0)
+        decoder_out2, decoder_out_lens2 = self.decoder2(
+            encoder_out, encoder_out_lens, decoder_out, decoder_out_lens, ys_in_pad, ys_in_lens
+        )
+
+        # 2. Compute attention loss
+        loss_att = self.criterion_att2(decoder_out2, ys_out_pad)
+        acc_att = th_accuracy(
+            decoder_out2.view(-1, self.vocab_size),
+            ys_out_pad,
+            ignore_label=self.ignore_id,
+        )
+
+        # Compute cer/wer using attention-decoder
+        if self.training or self.error_calculator2 is None:
+            cer_att, wer_att = None, None
+        else:
+            ys_hat = decoder_out2.argmax(dim=-1)
+            cer_att, wer_att = self.error_calculator2(ys_hat.cpu(), ys_pad.cpu())
+
+        return loss_att, acc_att, cer_att, wer_att, decoder_out2, decoder_out_lens2
+
+    
     def _calc_att_loss(
         self,
         encoder_out: torch.Tensor,
@@ -447,8 +517,8 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         ys_in_lens = ys_pad_lens + 1
 
         # 1. Forward decoder
-        decoder_out, decoder_out_lens = self.decoder(
-            encoder_out, encoder_out_lens, ys_in_pad, ys_in_lens
+        decoder_out, decoder_out_lens, decoder_embeddings = self.decoder(
+            encoder_out, encoder_out_lens, ys_in_pad, ys_in_lens, True
         )
 
         # 2. Compute attention loss
@@ -466,7 +536,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
             ys_hat = decoder_out.argmax(dim=-1)
             cer_att, wer_att = self.error_calculator(ys_hat.cpu(), ys_pad.cpu())
 
-        return loss_att, acc_att, cer_att, wer_att, decoder_out, decoder_out_lens
+        return loss_att, acc_att, cer_att, wer_att, decoder_embeddings, decoder_out_lens
 
     def _calc_ctc_loss(
         self,
@@ -483,6 +553,23 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         if not self.training and self.error_calculator is not None:
             ys_hat = self.ctc.argmax(encoder_out).data
             cer_ctc = self.error_calculator(ys_hat.cpu(), ys_pad.cpu(), is_ctc=True)
+        return loss_ctc, cer_ctc
+
+    def _calc_ctc_loss2(
+        self,
+        encoder_out: torch.Tensor,
+        encoder_out_lens: torch.Tensor,
+        ys_pad: torch.Tensor,
+        ys_pad_lens: torch.Tensor,
+    ):
+        # Calc CTC loss
+        loss_ctc = self.ctc2(encoder_out, encoder_out_lens, ys_pad, ys_pad_lens)
+
+        # Calc CER using CTC
+        cer_ctc = None
+        if not self.training and self.error_calculator2 is not None:
+            ys_hat = self.ctc2.argmax(encoder_out).data
+            cer_ctc = self.error_calculator2(ys_hat.cpu(), ys_pad.cpu(), is_ctc=True)
         return loss_ctc, cer_ctc
 
     def _calc_transducer_loss(

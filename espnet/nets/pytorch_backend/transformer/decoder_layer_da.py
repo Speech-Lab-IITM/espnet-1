@@ -46,7 +46,7 @@ class DecoderLayerDA(nn.Module):
         concat_after=False,
     ):
         """Construct an DecoderLayer object."""
-        super(DecoderLayer, self).__init__()
+        super(DecoderLayerDA, self).__init__()
         self.size = size
         self.self_attn = self_attn
         self.src_attn = src_attn

@@ -18,6 +18,7 @@ from espnet2.asr.decoder.transformer_decoder import (
     LightweightConvolutionTransformerDecoder,
     TransformerDecoder,
 )
+from espnet2.asr.decoder.transformer_decoder_da import TransformerDecoderDA
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
 from espnet2.asr.encoder.branchformer_encoder import BranchformerEncoder
 from espnet2.asr.encoder.conformer_encoder import ConformerEncoder
@@ -63,7 +64,7 @@ from espnet2.torch_utils.initialize import initialize
 from espnet2.train.abs_espnet_model import AbsESPnetModel
 from espnet2.train.class_choices import ClassChoices
 from espnet2.train.collate_fn import CommonCollateFn
-from espnet2.train.preprocessor import CommonPreprocessor
+from espnet2.train.preprocessor import MutliTokenizerCommonPreprocessor
 from espnet2.train.trainer import Trainer
 from espnet2.utils.get_default_kwargs import get_default_kwargs
 from espnet2.utils.nested_dict_action import NestedDictAction
@@ -107,7 +108,7 @@ model_choices = ClassChoices(
         multilingual=MultilingualEDDASRModel,
     ),
     type_check=AbsESPnetModel,
-    default="espnet",
+    default="multilingual",
 )
 preencoder_choices = ClassChoices(
     name="preencoder",
@@ -197,13 +198,19 @@ class MultilingualASRTask(AbsTask):
         # NOTE(kamo): add_arguments(..., required=True) can't be used
         # to provide --print_config mode. Instead of it, do as
         required = parser.get_default("required")
-        required += ["token_list"]
+        required += ["token_list", "token_list2"]
 
         group.add_argument(
             "--token_list",
             type=str_or_none,
             default=None,
             help="A text mapping int-id to token",
+        )
+        group.add_argument(
+            "--token_list2",
+            type=str_or_none,
+            default=None,
+            help="A text mapping int-id to token for CLS",
         )
         group.add_argument(
             "--init",
@@ -259,6 +266,12 @@ class MultilingualASRTask(AbsTask):
             type=str_or_none,
             default=None,
             help="The model file of sentencepiece",
+        )
+        group.add_argument(
+            "--bpemodel2",
+            type=str_or_none,
+            default=None,
+            help="The model file of sentencepiece for CLS",
         )
         parser.add_argument(
             "--non_linguistic_symbols",
@@ -345,11 +358,11 @@ class MultilingualASRTask(AbsTask):
     ) -> Optional[Callable[[str, Dict[str, np.array]], Dict[str, np.ndarray]]]:
         assert check_argument_types()
         if args.use_preprocessor:
-            retval = CommonPreprocessor(
+            retval = MutliTokenizerCommonPreprocessor(
                 train=train,
-                token_type=args.token_type,
-                token_list=args.token_list,
-                bpemodel=args.bpemodel,
+                token_type=[args.token_type, args.token_type],
+                token_list=[args.token_list2, args.token_list],
+                bpemodel=[args.bpemodel2, args.bpemodel],
                 non_linguistic_symbols=args.non_linguistic_symbols,
                 text_cleaner=args.cleaner,
                 g2p_type=args.g2p,
@@ -371,6 +384,7 @@ class MultilingualASRTask(AbsTask):
                 speech_volume_normalize=args.speech_volume_normalize
                 if hasattr(args, "rir_scp")
                 else None,
+                text_name=["text", "text2"],
             )
         else:
             retval = None
@@ -382,7 +396,7 @@ class MultilingualASRTask(AbsTask):
         cls, train: bool = True, inference: bool = False
     ) -> Tuple[str, ...]:
         if not inference:
-            retval = ("speech", "text", "speech2", "text2")
+            retval = ("speech", "text", "text2")
         else:
             # Recognition mode
             retval = ("speech",)
@@ -397,7 +411,7 @@ class MultilingualASRTask(AbsTask):
         return retval
 
     @classmethod
-    def build_model(cls, args: argparse.Namespace) -> ESPnetASRModel:
+    def build_model(cls, args: argparse.Namespace) -> MultilingualEDDASRModel:
         assert check_argument_types()
         if isinstance(args.token_list, str):
             with open(args.token_list, encoding="utf-8") as f:
@@ -409,6 +423,18 @@ class MultilingualASRTask(AbsTask):
             token_list = list(args.token_list)
         else:
             raise RuntimeError("token_list must be str or list")
+
+        if isinstance(args.token_list2, str):
+            with open(args.token_list2, encoding="utf-8") as f:
+                token_list2 = [line.rstrip() for line in f]
+
+            # Overwriting token_list to keep it as "portable".
+            args.token_list2 = list(token_list2)
+        elif isinstance(args.token_list2, (tuple, list)):
+            token_list2 = list(args.token_list2)
+        else:
+            raise RuntimeError("token_list must be str or list")
+        
         vocab_size = len(token_list)
         logging.info(f"Vocabulary size: {vocab_size }")
 
@@ -521,6 +547,7 @@ class MultilingualASRTask(AbsTask):
             ctc2=ctc2,
             joint_network=joint_network,
             token_list=token_list,
+            token_list2=token_list2,
             **args.model_conf,
         )
 

@@ -69,7 +69,7 @@ ngram_exp=
 ngram_num=3
 
 # Language model related
-use_lm=true       # Use language model for ASR decoding.
+use_lm=false       # Use language model for ASR decoding.
 lm_tag=           # Suffix to the result dir for language model training.
 lm_exp=           # Specify the directory path for LM experiment.
                   # If this option is specified, lm_tag is ignored.
@@ -83,7 +83,7 @@ num_splits_lm=1   # Number of splitting for lm corpus.
 word_vocab_size=10000 # Size of word vocabulary.
 
 # ASR model related
-asr_task=asr   # ASR task mode. Either 'asr' or 'asr_transducer'.
+asr_task=multilingual_asr   # ASR task mode. Either 'asr' or 'asr_transducer'.
 asr_tag=       # Suffix to the result dir for asr model training.
 asr_exp=       # Specify the directory path for ASR experiment.
                # If this option is specified, asr_tag is ignored.
@@ -288,6 +288,7 @@ fi
 
 # Use the same text as ASR for bpe training if not specified.
 [ -z "${bpe_train_text}" ] && bpe_train_text="${data_feats}/${train_set}/text"
+bpe_train_text2="${data_feats}/${train_set}/text_cls"
 # Use the same text as ASR for lm training if not specified.
 [ -z "${lm_train_text}" ] && lm_train_text="${data_feats}/${train_set}/text"
 # Use the same text as ASR for lm training if not specified.
@@ -298,23 +299,34 @@ fi
 # Check tokenization type
 if [ "${lang}" != noinfo ]; then
     token_listdir=data/${lang}_token_list
+    token_listdir2=data/cls_${lang}_token_list
 else
     token_listdir=data/token_list
+    token_listdir=data/cls_token_list
 fi
 bpedir="${token_listdir}/bpe_${bpemode}${nbpe}"
 bpeprefix="${bpedir}"/bpe
 bpemodel="${bpeprefix}".model
 bpetoken_list="${bpedir}"/tokens.txt
 chartoken_list="${token_listdir}"/char/tokens.txt
+
+bpedir2="${token_listdir}/cls_bpe_${bpemode}${nbpe}"
+bpeprefix2="${bpedir2}"/bpe
+bpemodel2="${bpeprefix2}".model
+bpetoken_list2="${bpedir2}"/tokens.txt
+chartoken_list2="${token_listdir}"/char/tokens.txt
 # NOTE: keep for future development.
 # shellcheck disable=SC2034
 wordtoken_list="${token_listdir}"/word/tokens.txt
 
 if [ "${token_type}" = bpe ]; then
     token_list="${bpetoken_list}"
+    token_list2="${bpetoken_list2}"
 elif [ "${token_type}" = char ]; then
     token_list="${chartoken_list}"
+    token_list2="${chartoken_list2}"
     bpemodel=none
+    bpemodel2=none
 elif [ "${token_type}" = word ]; then
     token_list="${wordtoken_list}"
     bpemodel=none
@@ -487,7 +499,7 @@ if ! "${skip_data_prep}"; then
                 else
                     _suf=""
                 fi
-                utils/copy_data_dir.sh --validate_opts --non-print data/"${dset}" "${data_feats}${_suf}/${dset}"
+                local/copy_data_dir.sh --validate_opts --non-print data/"${dset}" "${data_feats}${_suf}/${dset}"
                 rm -f ${data_feats}${_suf}/${dset}/{segments,wav.scp,reco2file_and_channel,reco2dur}
 
                 _opts=
@@ -517,12 +529,12 @@ if ! "${skip_data_prep}"; then
                     _suf=""
                 fi
                 # 1. Copy datadir
-                utils/copy_data_dir.sh --validate_opts --non-print data/"${dset}" "${data_feats}${_suf}/${dset}"
+                local/copy_data_dir.sh --validate_opts --non-print data/"${dset}" "${data_feats}${_suf}/${dset}"
 
                 # 2. Feature extract
                 _nj=$(min "${nj}" "$(<"${data_feats}${_suf}/${dset}/utt2spk" wc -l)")
                 steps/make_fbank_pitch.sh --nj "${_nj}" --cmd "${train_cmd}" "${data_feats}${_suf}/${dset}"
-                utils/fix_data_dir.sh "${data_feats}${_suf}/${dset}"
+                local/fix_data_dir.sh "${data_feats}${_suf}/${dset}"
 
                 # 3. Derive the the frame length and feature dimension
                 scripts/feats/feat_to_shape.sh --nj "${_nj}" --cmd "${train_cmd}" \
@@ -553,7 +565,7 @@ if ! "${skip_data_prep}"; then
                 fi
                 # Generate dummy wav.scp to avoid error by copy_data_dir.sh
                 <data/"${dset}"/cmvn.scp awk ' { print($1,"<DUMMY>") }' > data/"${dset}"/wav.scp
-                utils/copy_data_dir.sh --validate_opts --non-print data/"${dset}" "${data_feats}${_suf}/${dset}"
+                local/copy_data_dir.sh --validate_opts --non-print data/"${dset}" "${data_feats}${_suf}/${dset}"
 
                 # Derive the the frame length and feature dimension
                 _nj=$(min "${nj}" "$(<"${data_feats}${_suf}/${dset}/utt2spk" wc -l)")
@@ -580,7 +592,7 @@ if ! "${skip_data_prep}"; then
         for dset in "${train_set}" "${valid_set}"; do
 
             # Copy data dir
-            utils/copy_data_dir.sh --validate_opts --non-print "${data_feats}/org/${dset}" "${data_feats}/${dset}"
+            local/copy_data_dir.sh --validate_opts --non-print "${data_feats}/org/${dset}" "${data_feats}/${dset}"
             cp "${data_feats}/org/${dset}/feats_type" "${data_feats}/${dset}/feats_type"
 
             # Remove short utterances
@@ -629,7 +641,7 @@ if ! "${skip_data_prep}"; then
                 awk ' { if( NF != 1 ) print $0; } ' >"${data_feats}/${dset}/text"
 
             # fix_data_dir.sh leaves only utts which exist in all files
-            utils/fix_data_dir.sh "${data_feats}/${dset}"
+            local/fix_data_dir.sh "${data_feats}/${dset}"
         done
 
         # shellcheck disable=SC2002
@@ -672,6 +684,39 @@ if ! "${skip_data_prep}"; then
             <"${bpeprefix}".vocab awk '{ if( NR != 1 && NR != 2 && NR != 3 ){ print $1; } }'
             echo "${sos_eos}"
             } > "${token_list}"
+
+            # Generate tokens for CLS text
+             mkdir -p "${bpedir2}"
+            # shellcheck disable=SC2002
+            cat ${bpe_train_text2} | cut -f 2- -d" "  > "${bpedir2}"/train.txt
+
+            if [ -n "${bpe_nlsyms}" ]; then
+                if test -f "${bpe_nlsyms}"; then
+                    bpe_nlsyms_list=$(awk '{print $1}' ${bpe_nlsyms} | paste -s -d, -)
+                    _opts_spm="--user_defined_symbols=${bpe_nlsyms_list}"
+                else
+                    _opts_spm="--user_defined_symbols=${bpe_nlsyms}"
+                fi
+            else
+                _opts_spm=""
+            fi
+
+            spm_train \
+                --input="${bpedir2}"/train.txt \
+                --vocab_size="${nbpe}" \
+                --model_type="${bpemode}" \
+                --model_prefix="${bpeprefix2}" \
+                --character_coverage=${bpe_char_cover} \
+                --input_sentence_size="${bpe_input_sentence_size}" \
+                ${_opts_spm}
+
+            {
+            echo "${blank}"
+            echo "${oov}"
+            # Remove <unk>, <s>, </s> from the vocabulary
+            <"${bpeprefix}".vocab awk '{ if( NR != 1 && NR != 2 && NR != 3 ){ print $1; } }'
+            echo "${sos_eos}"
+            } > "${token_list2}"
 
         elif [ "${token_type}" = char ] || [ "${token_type}" = word ]; then
             log "Stage 5: Generate character level token_list from ${lm_train_text}"
@@ -981,8 +1026,10 @@ if ! "${skip_train}"; then
                 --collect_stats true \
                 --use_preprocessor true \
                 --bpemodel "${bpemodel}" \
+                --bpemodel2 "${bpemodel2}" \
                 --token_type "${token_type}" \
                 --token_list "${token_list}" \
+                --token_list2 "${token_list2}" \
                 --non_linguistic_symbols "${nlsyms_txt}" \
                 --cleaner "${cleaner}" \
                 --g2p "${g2p}" \
@@ -1122,8 +1169,10 @@ if ! "${skip_train}"; then
             ${python} -m espnet2.bin.${asr_task}_train \
                 --use_preprocessor true \
                 --bpemodel "${bpemodel}" \
+                --bpemodel2 "${bpemodel2}" \
                 --token_type "${token_type}" \
                 --token_list "${token_list}" \
+                --token_list2 "${token_list2}" \
                 --non_linguistic_symbols "${nlsyms_txt}" \
                 --cleaner "${cleaner}" \
                 --g2p "${g2p}" \
