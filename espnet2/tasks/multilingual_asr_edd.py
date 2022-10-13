@@ -546,8 +546,8 @@ class MultilingualASRTask(AbsTask):
             ctc=ctc,
             ctc2=ctc2,
             joint_network=joint_network,
-            token_list=token_list,
-            token_list2=token_list2,
+            token_list=token_list2, # token list for cls
+            token_list2=token_list, # token list for native script
             **args.model_conf,
         )
 

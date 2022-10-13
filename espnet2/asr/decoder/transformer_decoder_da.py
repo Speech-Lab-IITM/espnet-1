@@ -183,9 +183,9 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterfaceDA):
         if cache is None:
             cache = [None] * len(self.decoders)
         new_cache = []
-        for c, decoder in zip(cache, self.decoders):
+        for c, decoder in zip(cache, self.decoders):            
             x, tgt_mask, memory, memory_mask, memory2, memory_mask2 = decoder(
-                x, tgt_mask, memory, memory2, None, cache=c
+                x, tgt_mask, memory, None, memory2, None, cache=c
             )
             new_cache.append(x)
 

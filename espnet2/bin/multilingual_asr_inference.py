@@ -5,6 +5,7 @@ import sys
 from distutils.version import LooseVersion
 from pathlib import Path
 from typing import Any, List, Optional, Sequence, Tuple, Union
+import itertools
 
 import numpy as np
 import torch
@@ -33,6 +34,7 @@ from espnet.nets.beam_search import BeamSearch, Hypothesis
 from espnet.nets.beam_search_da import BeamSearchDA
 from espnet.nets.pytorch_backend.transformer.subsampling import TooShortUttError
 from espnet.nets.scorer_interface import BatchScorerInterface
+from espnet.nets.scorer_interface_da import BatchScorerInterfaceDA
 from espnet.nets.scorers.ctc import CTCPrefixScorer
 from espnet.nets.scorers.length_bonus import LengthBonus
 from espnet.utils.cli_utils import get_commandline_args
@@ -184,6 +186,14 @@ class Speech2Text:
                 length_bonus=penalty,
             )
 
+            weights_da = dict(
+                decoder=0.7,
+                ctc=0.3,
+                lm=lm_weight,
+                ngram=ngram_weight,
+                length_bonus=penalty,
+            )
+
             scorers2 = {}
             decoder2 = asr_model.decoder2
             ctc2 = CTCPrefixScorer(ctc=asr_model.ctc2, eos=asr_model.eos)
@@ -195,7 +205,7 @@ class Speech2Text:
             )
             beam_search = BeamSearchDA(
                 beam_size=beam_size,
-                weights=weights,
+                weights=weights_da,
                 scorers=scorers2,
                 sos=asr_model.sos,
                 eos=asr_model.eos,
@@ -219,8 +229,8 @@ class Speech2Text:
             if batch_size == 1:
                 non_batch = [
                     k
-                    for k, v in beam_search.full_scorers.items()
-                    if not isinstance(v, BatchScorerInterface)
+                    for k, v in itertools.chain(beam_search.full_scorers.items(), beam_search_for_decoder_out.full_scorers.items())
+                    if not isinstance(v, BatchScorerInterface) and not isinstance(v, BatchScorerInterfaceDA)
                 ]
                 if len(non_batch) == 0:
                     if streaming:
@@ -241,7 +251,7 @@ class Speech2Text:
 
             beam_search.to(device=device, dtype=getattr(torch, dtype)).eval()
             beam_search_for_decoder_out.to(device=device, dtype=getattr(torch, dtype)).eval()
-            for scorer in scorers.values():
+            for scorer in itertools.chain(scorers.values(), scorers2.values()):
                 if isinstance(scorer, torch.nn.Module):
                     scorer.to(device=device, dtype=getattr(torch, dtype)).eval()
             logging.info(f"Beam_search: {beam_search}")            
@@ -263,7 +273,7 @@ class Speech2Text:
                 tokenizer = None
         else:
             tokenizer = build_tokenizer(token_type=token_type)
-        converter = TokenIDConverter(token_list=token_list)
+        converter = TokenIDConverter(token_list=token_list2)    # this should be for native script
         logging.info(f"Text tokenizer: {tokenizer}")
 
         self.asr_model = asr_model
@@ -348,6 +358,7 @@ class Speech2Text:
         return results
 
     def _decode_single_sample(self, enc: torch.Tensor):
+        enc_copy = enc.detach().clone()
         if self.beam_search_transducer:
             logging.info("encoder output length: " + str(enc.shape[0]))
             nbest_hyps = self.beam_search_transducer(enc)
@@ -372,9 +383,10 @@ class Speech2Text:
             assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
 
             # get state of the last decoder
+            # decoder_state = None
             decoder_state = hyp.states["decoder"][-1]
             nbest_hyps2 = self.beam_search(
-                x=enc, x2=decoder_state, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
+                x=enc_copy, x2=decoder_state, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
             )
 
             for hyp2 in nbest_hyps2:

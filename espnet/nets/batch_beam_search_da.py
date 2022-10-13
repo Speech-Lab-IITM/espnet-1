@@ -140,7 +140,8 @@ class BatchBeamSearchDA(BeamSearchDA):
         for k, d in self.full_scorers.items():
             if isinstance(d, BatchScorerInterfaceDA):
                 scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x, x2)
-            scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x)
+            else:
+                scores[k], states[k] = d.batch_score(hyp.yseq, hyp.states[k], x)
         return scores, states
 
     def score_partial(

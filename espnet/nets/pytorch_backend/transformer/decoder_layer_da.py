@@ -118,11 +118,11 @@ class DecoderLayerDA(nn.Module):
                 (x, self.src_attn(x, memory, memory, memory_mask)), dim=-1
             )
             x_concat = torch.cat(
-                (x_concat, self.src_attn(x, memory2, memory2, memory_mask2)), dim=-1
+                (x_concat, self.src_attn2(x, memory2, memory2, memory_mask2)), dim=-1
             )
             x = residual + self.concat_linear2(x_concat)
         else:
-            x = residual + self.dropout(self.src_attn(x, memory, memory, memory_mask)) + self.dropout(self.src_attn(x, memory2, memory2, memory_mask2))
+            x = residual + self.dropout(self.src_attn(x, memory, memory, memory_mask)) + self.dropout(self.src_attn2(x, memory2, memory2, memory_mask2))
         if not self.normalize_before:
             x = self.norm2(x)
 

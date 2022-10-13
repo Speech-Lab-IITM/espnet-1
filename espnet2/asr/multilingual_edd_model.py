@@ -259,7 +259,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
             stats["cer"] = cer_att
             stats["wer"] = wer_att
 
-            stats["loss_att2"] = loss_att2.detach() if loss_att is not None else None
+            stats["loss_att2"] = loss_att2.detach() if loss_att2 is not None else None
             stats["acc2"] = acc_att2
             stats["cer2"] = cer_att2
             stats["wer2"] = wer_att2
@@ -482,8 +482,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         # print("decoder_out:",decoder_out.size())
         # print("decoder_out_lens:",decoder_out_lens.size())
         # print(decoder_out_lens[0])
-        # print("---------------------")
-        # exit(0)
+        # print("---------------------")        
         decoder_out2, decoder_out_lens2 = self.decoder2(
             encoder_out, encoder_out_lens, decoder_out, decoder_out_lens, ys_in_pad, ys_in_lens
         )
@@ -547,7 +546,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
     ):
         # Calc CTC loss
         loss_ctc = self.ctc(encoder_out, encoder_out_lens, ys_pad, ys_pad_lens)
-
+        
         # Calc CER using CTC
         cer_ctc = None
         if not self.training and self.error_calculator is not None:
