@@ -163,6 +163,15 @@ decoder_choices = ClassChoices(
     default="rnn",
 )
 
+decoder2_choices = ClassChoices(
+    "decoder2",
+    classes=dict(
+        transformerda=TransformerDecoderDA,
+    ),
+    type_check=AbsDecoder,
+    default="transformerda",
+)
+
 
 class MultilingualASRTask(AbsTask):
     # If you need more than one optimizers, change this value
@@ -186,6 +195,8 @@ class MultilingualASRTask(AbsTask):
         postencoder_choices,
         # --decoder and --decoder_conf
         decoder_choices,
+        # --decoder2 and --decoder2_conf
+        decoder2_choices,
     ]
 
     # If you need to modify train() or eval() procedures, change Trainer class here
@@ -515,7 +526,7 @@ class MultilingualASRTask(AbsTask):
             decoder2 = TransformerDecoderDA(
                 vocab_size=vocab_size,
                 encoder_output_size=encoder_output_size,
-                **args.decoder_conf,
+                **args.decoder2_conf,
             )
 
             joint_network = None

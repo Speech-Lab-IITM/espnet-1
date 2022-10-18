@@ -176,24 +176,31 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
             x, tgt_mask, memory, memory_mask = decoder(
                 x, tgt_mask, memory, None, cache=c
             )
-            new_cache.append(x)
+            new_cache.append(x)        
 
         if self.normalize_before:
+            decoder_embeddings = self.after_norm(x)
             y = self.after_norm(x[:, -1])
         else:
+            decoder_embeddings = x
             y = x[:, -1]
+                
+        # print("x size",x.size())
+        # print("y size",y.size())
+        # print("decoder emb size size",decoder_embeddings.size())
+        
         if self.output_layer is not None:
             y = torch.log_softmax(self.output_layer(y), dim=-1)
 
-        return y, new_cache
+        return y, new_cache, decoder_embeddings
 
     def score(self, ys, state, x):
         """Score."""
         ys_mask = subsequent_mask(len(ys), device=x.device).unsqueeze(0)
-        logp, state = self.forward_one_step(
+        logp, state, decoder_embeddings = self.forward_one_step(
             ys.unsqueeze(0), ys_mask, x.unsqueeze(0), cache=state
         )
-        return logp.squeeze(0), state
+        return logp.squeeze(0), state, decoder_embeddings
 
     def batch_score(
         self, ys: torch.Tensor, states: List[Any], xs: torch.Tensor
@@ -226,11 +233,11 @@ class BaseTransformerDecoder(AbsDecoder, BatchScorerInterface):
 
         # batch decoding
         ys_mask = subsequent_mask(ys.size(-1), device=xs.device).unsqueeze(0)
-        logp, states = self.forward_one_step(ys, ys_mask, xs, cache=batch_state)
+        logp, states, decoder_embeddings = self.forward_one_step(ys, ys_mask, xs, cache=batch_state)
 
         # transpose state of [layer, batch] into [batch, layer]
         state_list = [[states[i][b] for i in range(n_layers)] for b in range(n_batch)]
-        return logp, state_list
+        return logp, state_list, decoder_embeddings
 
 
 class TransformerDecoder(BaseTransformerDecoder):

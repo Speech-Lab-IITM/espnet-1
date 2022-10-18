@@ -186,9 +186,11 @@ class Speech2Text:
                 length_bonus=penalty,
             )
 
+            ctc_weight2 = 0.3
+            beam_size2 = 20
             weights_da = dict(
-                decoder=0.7,
-                ctc=0.3,
+                decoder=1.0 - ctc_weight2,
+                ctc=ctc_weight2,
                 lm=lm_weight,
                 ngram=ngram_weight,
                 length_bonus=penalty,
@@ -204,14 +206,14 @@ class Speech2Text:
                 length_bonus=LengthBonus(len(token_list2)),
             )
             beam_search = BeamSearchDA(
-                beam_size=beam_size,
+                beam_size=beam_size2,
                 weights=weights_da,
                 scorers=scorers2,
                 sos=asr_model.sos,
                 eos=asr_model.eos,
                 vocab_size=len(token_list2),
                 token_list=token_list2,
-                pre_beam_score_key=None if ctc_weight == 1.0 else "full",
+                pre_beam_score_key=None if ctc_weight2 == 1.0 else "full",
             )
             
             beam_search_for_decoder_out = BeamSearch(
@@ -240,9 +242,9 @@ class Speech2Text:
                             "BatchBeamSearchOnlineSim implementation is selected."
                         )
                     else:
-                        beam_search.__class__ = BatchBeamSearchDA
-                        beam_search_for_decoder_out.__class__ = BatchBeamSearch
-                        logging.info("BatchBeamSearch implementation is selected.")
+                        beam_search.__class__ = BatchBeamSearchDA # BeamSearchDA
+                        beam_search_for_decoder_out.__class__ = BeamSearch #BatchBeamSearch for debugging
+                        logging.info("BatchBeamSearch implementation is not selected for debugging purposes.")
                 else:
                     logging.warning(
                         f"As non-batch scorers {non_batch} are found, "
@@ -384,7 +386,9 @@ class Speech2Text:
 
             # get state of the last decoder
             # decoder_state = None
-            decoder_state = hyp.states["decoder"][-1]
+            decoder_state = hyp.decoder_embeddings[0]
+            #print("decoder_embedding size", decoder_state.size())
+            #print("encoder embedding size", enc_copy.size())
             nbest_hyps2 = self.beam_search(
                 x=enc_copy, x2=decoder_state, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
             )

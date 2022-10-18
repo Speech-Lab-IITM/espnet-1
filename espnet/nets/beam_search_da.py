@@ -110,6 +110,7 @@ class BeamSearchDA(torch.nn.Module):
                 scores=init_scores,
                 states=init_states,
                 yseq=torch.tensor([self.sos], device=x.device),
+                decoder_embeddings=torch.tensor([], device=x.device)
             )
         ]
 
@@ -306,6 +307,7 @@ class BeamSearchDA(torch.nn.Module):
                             hyp.scores, scores, j, part_scores, part_j
                         ),
                         states=self.merge_states(states, part_states, part_j),
+                        decoder_embeddings=torch.tensor([], device=x.device)
                     )
                 )
 

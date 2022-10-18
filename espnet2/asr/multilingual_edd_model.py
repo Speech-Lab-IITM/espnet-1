@@ -55,6 +55,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         joint_network: Optional[torch.nn.Module],
         ctc_weight: float = 0.5,
         interctc_weight: float = 0.0,
+        cls_weight: float = 0.8,
         ignore_id: int = -1,
         lsm_weight: float = 0.0,
         length_normalized_loss: bool = False,
@@ -76,6 +77,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         self.vocab_size = vocab_size
         self.ignore_id = ignore_id
         self.ctc_weight = ctc_weight
+        self.cls_weight = cls_weight
         self.interctc_weight = interctc_weight
         self.token_list = token_list.copy()
         self.token_list2 = token_list2.copy()
@@ -206,8 +208,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
 
             stats["loss_ctc2"] = loss_ctc2.detach() if loss_ctc2 is not None else None
             stats["cer_ctc2"] = cer_ctc2
-
-        loss_ctc = loss_ctc + loss_ctc2
+        
 
         # Intermediate CTC (optional)
         loss_interctc = 0.0
@@ -263,15 +264,23 @@ class MultilingualEDDASRModel(AbsESPnetModel):
             stats["acc2"] = acc_att2
             stats["cer2"] = cer_att2
             stats["wer2"] = wer_att2
-
-            loss_att = loss_att + loss_att2
+            
+            loss1=None
+            loss2=None
             # 3. CTC-Att loss definition
             if self.ctc_weight == 0.0:
-                loss = loss_att
+                loss1 = loss_att
+                loss2 = loss_att2
             elif self.ctc_weight == 1.0:
-                loss = loss_ctc
+                loss1 = loss_ctc
+                loss2 = loss_ctc2
             else:
-                loss = self.ctc_weight * loss_ctc + (1 - self.ctc_weight) * loss_att
+                loss1 = self.ctc_weight * loss_ctc + (1 - self.ctc_weight) * loss_att
+                loss2 = self.ctc_weight * loss_ctc2 + (1 - self.ctc_weight) * loss_att2
+
+            #compute total loss combining losses of cls and native script
+            #cls_weight = 0.8 # give more wight to cls since cls to native script can converge very fast
+            loss = self.cls_weight * loss1 + (1-self.cls_weight) * loss2
 
         # Collect total loss stats
         stats["loss"] = loss.detach()

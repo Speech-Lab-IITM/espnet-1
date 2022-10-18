@@ -14,6 +14,7 @@ class Hypothesis(NamedTuple):
     """Hypothesis data type."""
 
     yseq: torch.Tensor
+    decoder_embeddings: torch.Tensor = torch.tensor([])
     score: Union[float, torch.Tensor] = 0
     scores: Dict[str, Union[float, torch.Tensor]] = dict()
     states: Dict[str, Any] = dict()
@@ -124,7 +125,8 @@ class BeamSearch(torch.nn.Module):
                 score=0.0,
                 scores=init_scores,
                 states=init_states,
-                yseq=torch.tensor([self.sos], device=x.device),
+                yseq=torch.tensor([self.sos], device=x.device),                
+                decoder_embeddings=torch.tensor([], device=x.device)
             )
         ]
 
@@ -162,9 +164,10 @@ class BeamSearch(torch.nn.Module):
         """
         scores = dict()
         states = dict()
+        decoder_embeddings = None
         for k, d in self.full_scorers.items():
-            scores[k], states[k] = d.score(hyp.yseq, hyp.states[k], x)
-        return scores, states
+            scores[k], states[k], decoder_embeddings = d.score(hyp.yseq, hyp.states[k], x)
+        return scores, states, decoder_embeddings
 
     def score_partial(
         self, hyp: Hypothesis, ids: torch.Tensor, x: torch.Tensor
@@ -290,7 +293,7 @@ class BeamSearch(torch.nn.Module):
         for hyp in running_hyps:
             # scoring
             weighted_scores = torch.zeros(self.n_vocab, dtype=x.dtype, device=x.device)
-            scores, states = self.score_full(hyp, x)
+            scores, states, decoder_embeddings = self.score_full(hyp, x)
             for k in self.full_scorers:
                 weighted_scores += self.weights[k] * scores[k]
             # partial scoring
@@ -318,6 +321,7 @@ class BeamSearch(torch.nn.Module):
                             hyp.scores, scores, j, part_scores, part_j
                         ),
                         states=self.merge_states(states, part_states, part_j),
+                        decoder_embeddings=decoder_embeddings
                     )
                 )
 
