@@ -19,7 +19,7 @@ feature_iter1="HuBERT6"
 # Extract latent features from transformer layer 9 of HuBERT model pre-trained in the iteration1
 feature_iter2="HuBERT9"
 
-train_set="train_clean_360"
+train_set="train_960"
 valid_set="dev"
 
 pretrain_config_iter0=conf/tuning/train_asr_hubert_base_960h_pretrain_it0.yaml

@@ -5,21 +5,18 @@ set -e
 set -u
 set -o pipefail
 
-source path.sh
-
 train_set="train_clean_100"
 valid_set="dev"
-#test_sets="test_other"
-test_sets="test_clean test_other dev_clean dev_other"
+test_sets="test_clean"
+#test_sets="test_clean test_other dev_clean dev_other"
 
-asr_config=conf/tuning/train_joint_char_0.3ctc.yaml
-inference_config=conf/decode_asr_char_0.3ctc.yaml
+asr_config=conf/tuning/train_hubert_char.yaml
+inference_config=conf/decode_asr_char.yaml
 
 ./asr.sh \
-    --stage 12 \
-    --stop_stage 13 \
+    --pretrained_model "8epoch.pth" \
     --lang en \
-    --ngpu 2 \
+    --ngpu 1 \
     --token_type char \
     --max_wav_duration 30 \
     --asr_config "${asr_config}" \

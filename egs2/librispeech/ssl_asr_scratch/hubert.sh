@@ -79,7 +79,7 @@ num_splits_asr=1           # Number of splitting for lm corpus.
 # Pretrain related
 n_clusters=                # Number of k-means clusters of pretraining stage
 features_km=               # Feature for k-means clustering of pretraining stage
-portion_km=0.1                # Portion of training set used for k-means
+portion_km=0.2                # Portion of training set used for k-means
 pretrain_configs=          # Configration files of pretraining stage
 
 download_model= # Download a model from Model Zoo and use it for decoding.

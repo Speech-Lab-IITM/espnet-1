@@ -30,8 +30,8 @@ min() {
 SECONDS=0
 
 # General configuration
-stage=5              # Processes starts from the specified stage.
-stop_stage=5     # Processes is stopped at the specified stage.
+stage=2              # Processes starts from the specified stage.
+stop_stage=7     # Processes is stopped at the specified stage.
 pretrain_start_iter= # Pretrain starts from the specified iteration (0 mean MFCC iteraion)
 pretrain_stop_iter=  # Pretrain is stopped from the specified iteration (0 mean MFCC iteraion)
 skip_data_prep=false # Skip data preparation stages.
@@ -293,8 +293,8 @@ if [ ${stage} -le 4 ] && [ ${stop_stage} -ge 4 ]; then
         fi
         
         # Remove empty text
-        <"${data_feats}/org/${dset}/text" \
-         awk ' { if( NF != 1 ) print $0; } ' >"${data_feats}/${dset}/text"
+        #<"${data_feats}/org/${dset}/text" \
+        # awk ' { if( NF != 1 ) print $0; } ' >"${data_feats}/${dset}/text"
         
         # fix_data_dir.sh leaves only utts which exist in all files
         utils/fix_data_dir.sh "${data_feats}/${dset}"
@@ -530,6 +530,9 @@ if [ ${stage} -le 7 ] && [ ${stop_stage} -ge 5 ]; then
             
             # NOTE(kamo): --fold_length is used only if --batch_type=folded and it's ignored in the other case
             log "Hubert pretraining started... log: '${asr_exp}/train.log'"
+	    echo "------------------------------------------------------------"
+	    echo "${cuda_cmd}"
+	    echo "------------------------------------------------------------"
             if echo "${cuda_cmd}" | grep -e queue.pl -e queue-freegpu.pl &> /dev/null; then
                 # SGE can't include "/" in a job name
                 jobname="$(basename ${asr_exp})"

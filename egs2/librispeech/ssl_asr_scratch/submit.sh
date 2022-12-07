@@ -17,4 +17,5 @@ export https_proxy=http://172.50.0.50:9090
 export http_proxy=http://172.50.0.50:9090
 source path.sh
 #srun time ./run_pre_char.sh --asr_tag lr0.0001_3.5Mbb_4ag_char_loadpre_epoch31_onlyctc --stop_stage 12 --stage 13
-srun time ./run_pre_char.sh --ngpu 8 --asr_tag 960h_lr0.00002_3.2Mbb_1ag_char_jointscratch_epoch362_100h_0.3ctc --stage 12 --stop_stage 13 --pretrained_model /nlsasfs/home/nltm-pilot/arunk/espnet_arun/espnet/egs2/librispeech/ssl_asr_scratch/exp/asr_joint_pretraining_scratch_libri960_0.5_lre-4/362epoch.pth
+#srun time ./run_pre_char.sh --asr_tag lr0.00002_3.2Mbb_1ag_char_jointscratch_epoch101_100h_onlyctc
+srun time ./run_joint_pretraining.sh --asr_tag joint_pretraining_scratch_libri960_0.7_lre-4
