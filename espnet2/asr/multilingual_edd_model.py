@@ -47,15 +47,16 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         normalize: Optional[AbsNormalize],
         preencoder: Optional[AbsPreEncoder],
         encoder: AbsEncoder,
+        encoderMT: AbsEncoder,
         postencoder: Optional[AbsPostEncoder],
         decoder: AbsDecoder,
-        decoder2: AbsDecoder,
+        decoderMT: AbsDecoder,
         ctc: CTC,
         ctc2: CTC,
         joint_network: Optional[torch.nn.Module],
         ctc_weight: float = 0.5,
         interctc_weight: float = 0.0,
-        cls_weight: float = 0.8,
+        cls_weight: float = 0.5,
         ignore_id: int = -1,
         lsm_weight: float = 0.0,
         length_normalized_loss: bool = False,
@@ -88,6 +89,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         self.preencoder = preencoder
         self.postencoder = postencoder
         self.encoder = encoder
+        self.encoderMT = encoderMT
 
         if not hasattr(self.encoder, "interctc_use_conditioning"):
             self.encoder.interctc_use_conditioning = False
@@ -110,7 +112,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
                 exit(1)
             else:
                 self.decoder = decoder
-                self.decoder2 = decoder2
+                self.decoderMT = decoderMT
 
             self.criterion_att = LabelSmoothingLoss(
                 size=vocab_size,
@@ -153,7 +155,7 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         text2_lengths: torch.Tensor,
         **kwargs,
     ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor], torch.Tensor]:
-        """Frontend + Encoder + Decoder + Decoder 2 + Calc loss
+        """Frontend + Encoder + Decoder + EncoderMT + Decoder MT + Calc loss
 
         Args:
             speech: (Batch, Length, ...)
@@ -187,10 +189,12 @@ class MultilingualEDDASRModel(AbsESPnetModel):
             encoder_out = encoder_out[0]
 
         loss_att, acc_att, cer_att, wer_att = None, None, None, None
-        loss_att2, acc_att2, cer_att2, wer_att2 = None, None, None, None
+        # loss_att2, acc_att2, cer_att2, wer_att2 = None, None, None, None
         loss_ctc, cer_ctc = None, None
-        loss_ctc2, cer_ctc2 = None, None
+        # loss_ctc2, cer_ctc2 = None, None
         stats = dict()
+
+
 
         # 1. CTC branch
         if self.ctc_weight != 0.0:
@@ -250,8 +254,27 @@ class MultilingualEDDASRModel(AbsESPnetModel):
                 # print("max of text_lengths", max(text_lengths))
                 # print("~~~~~~~~~~~~")
 
-                loss_att2, acc_att2, cer_att2, wer_att2, decoder_out2, decoder_out_lens2 = self._calc_dual_att_loss(
-                    encoder_out, encoder_out_lens, decoder_embeddings, text_lengths+1, text2, text2_lengths
+        # 1.1 EncoderMT
+        encoderMT_out, encoderMT_out_lens = self.encodeMT(decoder_embeddings, decoder_out_lens)
+        intermediate_outs = None
+        if isinstance(encoder_out, tuple):
+            intermediate_outs = encoderMT_out[1]
+            encoderMT_out = encoderMT_out[0]
+
+        # loss_att, acc_att, cer_att, wer_att = None, None, None, None
+        loss_att2, acc_att2, cer_att2, wer_att2 = None, None, None, None
+        # loss_ctc, cer_ctc = None, None
+        loss_ctc2, cer_ctc2 = None, None
+        stats = dict()
+
+        if self.use_transducer_decoder:
+            pass
+
+        else:
+            # 2b. Attention decoderMT branch
+            if self.ctc_weight != 1.0:
+                loss_att2, acc_att2, cer_att2, wer_att2, decoder_out2, decoder_out_lens2 = self._calc_att_loss(
+                    encoderMT_out, encoderMT_out_lens, text2, text2_lengths
                 )
 
             # Collect Attn branch stats
@@ -368,6 +391,66 @@ class MultilingualEDDASRModel(AbsESPnetModel):
 
         return encoder_out, encoder_out_lens
 
+    def encodeMT(
+        self, decoder_embeddings: torch.Tensor, decoder_out_lens: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """Frontend + Encoder. Note that this method is used by asr_inference.py
+
+        Args:
+            speech: (Batch, Length, ...)
+            speech_lengths: (Batch, )
+        """
+        with autocast(False):
+            # 1. Extract feats
+            feats, feats_lengths = self._extract_featsMT(decoder_embeddings, decoder_out_lens)
+
+            # 2. Data augmentation
+            if self.specaug is not None and self.training:
+                feats, feats_lengths = self.specaug(feats, feats_lengths)
+
+            # 3. Normalization for feature: e.g. Global-CMVN, Utterance-CMVN
+            if self.normalize is not None:
+                feats, feats_lengths = self.normalize(feats, feats_lengths)
+
+        # Pre-encoder, e.g. used for raw input data
+        if self.preencoder is not None:
+            feats, feats_lengths = self.preencoder(feats, feats_lengths)
+
+        # 4. Forward encoder
+        # feats: (Batch, Length, Dim)
+        # -> encoder_out: (Batch, Length2, Dim2)
+        if self.encoder.interctc_use_conditioning:
+            encoder_out, encoder_out_lens, _ = self.encoder(
+                feats, feats_lengths, ctc=self.ctc
+            )
+        else:
+            encoder_out, encoder_out_lens, _ = self.encoder(feats, feats_lengths)
+        intermediate_outs = None
+        if isinstance(encoder_out, tuple):
+            intermediate_outs = encoder_out[1]
+            encoder_out = encoder_out[0]
+
+        # Post-encoder, e.g. NLU
+        if self.postencoder is not None:
+            encoder_out, encoder_out_lens = self.postencoder(
+                encoder_out, encoder_out_lens
+            )
+
+        assert encoder_out.size(0) == speech.size(0), (
+            encoder_out.size(),
+            speech.size(0),
+        )
+        assert encoder_out.size(1) <= encoder_out_lens.max(), (
+            encoder_out.size(),
+            encoder_out_lens.max(),
+        )
+
+        if intermediate_outs is not None:
+            return (encoder_out, intermediate_outs), encoder_out_lens
+
+        return encoder_out, encoder_out_lens
+
+
     def _extract_feats(
         self, speech: torch.Tensor, speech_lengths: torch.Tensor
     ) -> Tuple[torch.Tensor, torch.Tensor]:
@@ -385,6 +468,19 @@ class MultilingualEDDASRModel(AbsESPnetModel):
         else:
             # No frontend and no feature extract
             feats, feats_lengths = speech, speech_lengths
+        return feats, feats_lengths
+
+    def _extract_featsMT(
+        self, decoder_embeddings: torch.Tensor, decoder_out_lens: torch.Tensor
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        assert decoder_out_lens.dim() == 1, decoder_out_lens.shape
+
+        # for data-parallel
+        decoder_embeddings = decoder_embeddings[:, : decoder_out_lens.max()]
+
+
+        # No frontend and no feature extract
+        feats, feats_lengths = decoder_embeddings, decoder_out_lens
         return feats, feats_lengths
 
     def nll(

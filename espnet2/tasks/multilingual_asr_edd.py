@@ -18,7 +18,7 @@ from espnet2.asr.decoder.transformer_decoder import (
     LightweightConvolutionTransformerDecoder,
     TransformerDecoder,
 )
-from espnet2.asr.decoder.transformer_decoder_da import TransformerDecoderDA
+# from espnet2.asr.decoder.transformer_decoder_da import TransformerDecoderDA
 from espnet2.asr.encoder.abs_encoder import AbsEncoder
 from espnet2.asr.encoder.branchformer_encoder import BranchformerEncoder
 from espnet2.asr.encoder.conformer_encoder import ConformerEncoder
@@ -138,6 +138,26 @@ encoder_choices = ClassChoices(
     type_check=AbsEncoder,
     default="rnn",
 )
+
+encoderMT_choices = ClassChoices(
+    "encoderMT",
+    classes=dict(
+        conformer=ConformerEncoder,
+        transformer=TransformerEncoder,
+        contextual_block_transformer=ContextualBlockTransformerEncoder,
+        contextual_block_conformer=ContextualBlockConformerEncoder,
+        vgg_rnn=VGGRNNEncoder,
+        rnn=RNNEncoder,
+        wav2vec2=FairSeqWav2Vec2Encoder,
+        hubert=FairseqHubertEncoder,
+        hubert_pretrain=FairseqHubertPretrainEncoder,
+        longformer=LongformerEncoder,
+        branchformer=BranchformerEncoder,
+    ),
+    type_check=AbsEncoder,
+    default="rnn",
+)
+
 postencoder_choices = ClassChoices(
     name="postencoder",
     classes=dict(
@@ -163,13 +183,20 @@ decoder_choices = ClassChoices(
     default="rnn",
 )
 
-decoder2_choices = ClassChoices(
-    "decoder2",
+decoderMT_choices = ClassChoices(
+    "decoderMT",
     classes=dict(
-        transformerda=TransformerDecoderDA,
+        transformer=TransformerDecoder,
+        lightweight_conv=LightweightConvolutionTransformerDecoder,
+        lightweight_conv2d=LightweightConvolution2DTransformerDecoder,
+        dynamic_conv=DynamicConvolutionTransformerDecoder,
+        dynamic_conv2d=DynamicConvolution2DTransformerDecoder,
+        rnn=RNNDecoder,
+        transducer=TransducerDecoder,
+        mlm=MLMDecoder,
     ),
     type_check=AbsDecoder,
-    default="transformerda",
+    default="rnn",
 )
 
 
@@ -192,11 +219,13 @@ class MultilingualASRTask(AbsTask):
         # --encoder and --encoder_conf
         encoder_choices,
         # --postencoder and --postencoder_conf
+        encoderMT_choices,
+        # --postencoder and --postencoder_conf
         postencoder_choices,
         # --decoder and --decoder_conf
         decoder_choices,
         # --decoder2 and --decoder2_conf
-        decoder2_choices,
+        decoderMT_choices,
     ]
 
     # If you need to modify train() or eval() procedures, change Trainer class here
@@ -489,9 +518,15 @@ class MultilingualASRTask(AbsTask):
         encoder_class = encoder_choices.get_class(args.encoder)
         encoder = encoder_class(input_size=input_size, **args.encoder_conf)
 
+        # 4. Encoder
+        encoderMT_class = encoderMT_choices.get_class(args.encoderMT)
+        encoderMT = encoderMT_class(input_size=input_size, **args.encoderMT_conf)
+
         # 5. Post-encoder block
         # NOTE(kan-bayashi): Use getattr to keep the compatibility
         encoder_output_size = encoder.output_size()
+        encoderMT_output_size = encoderMT.output_size()
+
         if getattr(args, "postencoder", None) is not None:
             postencoder_class = postencoder_choices.get_class(args.postencoder)
             postencoder = postencoder_class(
@@ -503,6 +538,7 @@ class MultilingualASRTask(AbsTask):
 
         # 5. Decoder
         decoder_class = decoder_choices.get_class(args.decoder)
+        decoderMT_class = decoderMT_choices.get_class(args.decoderMT)
 
         if args.decoder == "transducer":
             decoder = decoder_class(
@@ -523,11 +559,19 @@ class MultilingualASRTask(AbsTask):
                 encoder_output_size=encoder_output_size,
                 **args.decoder_conf,
             )
-            decoder2 = TransformerDecoderDA(
+
+            decoderMT = decoderMT_class(
                 vocab_size=vocab_size,
-                encoder_output_size=encoder_output_size,
-                **args.decoder2_conf,
+                encoder_output_size=encoderMT_output_size,
+                **args.decoderMT_conf,
             )
+
+
+            # decoder2 = TransformerDecoderDA(
+            #     vocab_size=vocab_size,
+            #     encoder_output_size=encoder_output_size,
+            #     **args.decoder2_conf,
+            # )
 
             joint_network = None
 
@@ -551,9 +595,10 @@ class MultilingualASRTask(AbsTask):
             normalize=normalize,
             preencoder=preencoder,
             encoder=encoder,
+            encoderMT=encoderMT,
             postencoder=postencoder,
             decoder=decoder,
-            decoder2=decoder2,
+            decoderMT=decoderMT,
             ctc=ctc,
             ctc2=ctc2,
             joint_network=joint_network,

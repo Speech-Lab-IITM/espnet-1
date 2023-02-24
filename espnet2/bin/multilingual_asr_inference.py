@@ -28,10 +28,10 @@ from espnet2.torch_utils.set_all_random_seed import set_all_random_seed
 from espnet2.utils import config_argparse
 from espnet2.utils.types import str2bool, str2triple_str, str_or_none
 from espnet.nets.batch_beam_search import BatchBeamSearch
-from espnet.nets.batch_beam_search_da import BatchBeamSearchDA
+# from espnet.nets.batch_beam_search_da import BatchBeamSearchDA
 from espnet.nets.batch_beam_search_online_sim import BatchBeamSearchOnlineSim
 from espnet.nets.beam_search import BeamSearch, Hypothesis
-from espnet.nets.beam_search_da import BeamSearchDA
+# from espnet.nets.beam_search_da import BeamSearchDA
 from espnet.nets.pytorch_backend.transformer.subsampling import TooShortUttError
 from espnet.nets.scorer_interface import BatchScorerInterface
 from espnet.nets.scorer_interface_da import BatchScorerInterfaceDA
@@ -188,7 +188,7 @@ class Speech2Text:
 
             ctc_weight2 = 0.3
             beam_size2 = 20
-            weights_da = dict(
+            weights_MT = dict(
                 decoder=1.0 - ctc_weight2,
                 ctc=ctc_weight2,
                 lm=lm_weight,
@@ -197,17 +197,17 @@ class Speech2Text:
             )
 
             scorers2 = {}
-            decoder2 = asr_model.decoder2
+            decoderMT = asr_model.decoderMT
             ctc2 = CTCPrefixScorer(ctc=asr_model.ctc2, eos=asr_model.eos)
             token_list2 = asr_model.token_list2
             scorers2.update(
-                decoder=decoder2,
+                decoder=decoderMT,
                 ctc=ctc2,
                 length_bonus=LengthBonus(len(token_list2)),
             )
-            beam_search = BeamSearchDA(
+            beam_search = BeamSearch(
                 beam_size=beam_size2,
-                weights=weights_da,
+                weights=weights_MT,
                 scorers=scorers2,
                 sos=asr_model.sos,
                 eos=asr_model.eos,
@@ -242,7 +242,7 @@ class Speech2Text:
                             "BatchBeamSearchOnlineSim implementation is selected."
                         )
                     else:
-                        beam_search.__class__ = BatchBeamSearchDA # BeamSearchDA
+                        beam_search.__class__ = BatchBeamSearch # BeamSearchDA
                         beam_search_for_decoder_out.__class__ = BeamSearch #BatchBeamSearch for debugging
                         logging.info("BatchBeamSearch implementation is not selected for debugging purposes.")
                 else:
@@ -328,6 +328,7 @@ class Speech2Text:
         batch = to_device(batch, device=self.device)
 
         # b. Forward Encoder
+        logging.info("shape of batch {}".**batch.shape)
         enc, _ = self.asr_model.encode(**batch)
         if self.enh_s2t_task:
             # Enh+ASR joint task
@@ -357,10 +358,99 @@ class Speech2Text:
             results = self._decode_single_sample(enc[0])
             assert check_return_type(results)
 
-        return results
+        # b1. Forward EncoderMT
+        logging.info("hyp_shape {}".results[-1].shape)
+        encmt, _ = self.asr_model.encodeMT(results[-1])
+        if self.enh_s2t_task:
+            # Enh+ASR joint task
+            # NOTE (Wangyou): the return type in this case is List[default_return_type]
+            num_spk = getattr(self.asr_model.enh_model, "num_spk", 1)
+            assert len(enc) == num_spk, (len(enc), num_spk)
+            results = []
+            for spk, enc_spk in enumerate(enc, 1):
+                logging.info("=== [EnhASR] Speaker {} ===".format(spk))
+                if isinstance(enc_spk, tuple):
+                    enc_spk = enc_spk[0]
+                assert len(enc_spk) == 1, len(enc_spk)
+
+                # c. Passed the encoder result and the beam search
+                ret = self._decode_single_sample(enc_spk[0])
+                assert check_return_type(ret)
+                results.append(ret)
+
+        else:
+
+            # Normal ASR
+            if isinstance(encmt, tuple):
+                encmt = encmt[0]
+            assert len(encmt) == 1, len(encmt)
+
+            # c. Passed the encoder result and the beam search
+            resultsmt = self._decode_single_sampleMT(encmt[0])
+            assert check_return_type(resultsmt)
+
+        return resultsmt
+
+    # def _decode_single_sample(self, enc: torch.Tensor):
+    #     enc_copy = enc.detach().clone()
+    #     if self.beam_search_transducer:
+    #         logging.info("encoder output length: " + str(enc.shape[0]))
+    #         nbest_hyps = self.beam_search_transducer(enc)
+
+    #         best = nbest_hyps[0]
+    #         logging.info(f"total log probability: {best.score:.2f}")
+    #         logging.info(
+    #             f"normalized log probability: {best.score / len(best.yseq):.2f}"
+    #         )
+    #         logging.info(
+    #             "best hypo: " + "".join(self.converter.ids2tokens(best.yseq[1:])) + "\n"
+    #         )
+    #     else:
+    #         nbest_hyps = self.beam_search_for_decoder_out(
+    #             x=enc, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
+    #         )
+
+    #     nbest_hyps = nbest_hyps[: self.nbest]
+
+    #     results = []
+    #     for hyp in nbest_hyps:
+    #         assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
+
+    #         # get state of the last decoder
+    #         # decoder_state = None
+    #         decoder_state = hyp.decoder_embeddings[0]
+    #         #print("decoder_embedding size", decoder_state.size())
+    #         #print("encoder embedding size", enc_copy.size())
+    #         nbest_hyps2 = self.beam_search(
+    #             x=enc_copy, x2=decoder_state, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
+    #         )
+
+    #         for hyp2 in nbest_hyps2:
+    #             assert isinstance(hyp2, (Hypothesis, TransHypothesis)), type(hyp2)
+
+    #             # remove sos/eos and get results
+    #             last_pos = None if self.asr_model.use_transducer_decoder else -1
+    #             if isinstance(hyp2.yseq, list):
+    #                 token_int = hyp2.yseq[1:last_pos]
+    #             else:
+    #                 token_int = hyp2.yseq[1:last_pos].tolist()
+
+    #             # remove blank symbol id, which is assumed to be 0
+    #             token_int = list(filter(lambda x: x != 0, token_int))
+
+    #             # Change integer-ids to tokens
+    #             token = self.converter.ids2tokens(token_int)
+
+    #             if self.tokenizer is not None:
+    #                 text = self.tokenizer.tokens2text(token)
+    #             else:
+    #                 text = None
+    #             results.append((text, token, token_int, hyp2))
+
+    #     return results
+
 
     def _decode_single_sample(self, enc: torch.Tensor):
-        enc_copy = enc.detach().clone()
         if self.beam_search_transducer:
             logging.info("encoder output length: " + str(enc.shape[0]))
             nbest_hyps = self.beam_search_transducer(enc)
@@ -384,38 +474,74 @@ class Speech2Text:
         for hyp in nbest_hyps:
             assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
 
-            # get state of the last decoder
-            # decoder_state = None
-            decoder_state = hyp.decoder_embeddings[0]
-            #print("decoder_embedding size", decoder_state.size())
-            #print("encoder embedding size", enc_copy.size())
-            nbest_hyps2 = self.beam_search(
-                x=enc_copy, x2=decoder_state, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
-            )
+            # remove sos/eos and get results
+            last_pos = None if self.asr_model.use_transducer_decoder else -1
+            if isinstance(hyp.yseq, list):
+                token_int = hyp.yseq[1:last_pos]
+            else:
+                token_int = hyp.yseq[1:last_pos].tolist()
 
-            for hyp2 in nbest_hyps2:
-                assert isinstance(hyp2, (Hypothesis, TransHypothesis)), type(hyp2)
+            # remove blank symbol id, which is assumed to be 0
+            token_int = list(filter(lambda x: x != 0, token_int))
 
-                # remove sos/eos and get results
-                last_pos = None if self.asr_model.use_transducer_decoder else -1
-                if isinstance(hyp2.yseq, list):
-                    token_int = hyp2.yseq[1:last_pos]
-                else:
-                    token_int = hyp2.yseq[1:last_pos].tolist()
+            # Change integer-ids to tokens
+            token = self.converter.ids2tokens(token_int)
 
-                # remove blank symbol id, which is assumed to be 0
-                token_int = list(filter(lambda x: x != 0, token_int))
-
-                # Change integer-ids to tokens
-                token = self.converter.ids2tokens(token_int)
-
-                if self.tokenizer is not None:
-                    text = self.tokenizer.tokens2text(token)
-                else:
-                    text = None
-                results.append((text, token, token_int, hyp2))
+            if self.tokenizer is not None:
+                text = self.tokenizer.tokens2text(token)
+            else:
+                text = None
+            results.append((text, token, token_int, hyp))
 
         return results
+
+    def _decode_single_sampleMT(self, encmt: torch.Tensor):
+        if self.beam_search_transducer:
+            logging.info("encoder output length: " + str(encmt.shape[0]))
+            nbest_hyps = self.beam_search_transducer(encmt)
+
+            best = nbest_hyps[0]
+            logging.info(f"total log probability: {best.score:.2f}")
+            logging.info(
+                f"normalized log probability: {best.score / len(best.yseq):.2f}"
+            )
+            logging.info(
+                "best hypo: " + "".join(self.converter.ids2tokens(best.yseq[1:])) + "\n"
+            )
+        else:
+            nbest_hyps = self.beam_search(
+                x=encmt, maxlenratio=self.maxlenratio, minlenratio=self.minlenratio
+            )
+
+        nbest_hyps = nbest_hyps[: self.nbest]
+
+        results = []
+        for hyp in nbest_hyps:
+            assert isinstance(hyp, (Hypothesis, TransHypothesis)), type(hyp)
+
+            # remove sos/eos and get results
+            last_pos = None if self.asr_model.use_transducer_decoder else -1
+            if isinstance(hyp.yseq, list):
+                token_int = hyp.yseq[1:last_pos]
+            else:
+                token_int = hyp.yseq[1:last_pos].tolist()
+
+            # remove blank symbol id, which is assumed to be 0
+            token_int = list(filter(lambda x: x != 0, token_int))
+
+            # Change integer-ids to tokens
+            token = self.converter.ids2tokens(token_int)
+
+            if self.tokenizer is not None:
+                text = self.tokenizer.tokens2text(token)
+            else:
+                text = None
+            results.append((text, token, token_int, hyp))
+
+        return results
+
+
+
 
     @staticmethod
     def from_pretrained(
